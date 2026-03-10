@@ -24,6 +24,7 @@ public class OrderService {
     private final CustomerRepository customerRepository;
     private final SellerRepository sellerRepository;
     private final CourierRepository courierRepository;
+    private final ProductRepository productRepository;
     private final NotificationService notificationService;
 
     @Transactional
@@ -43,10 +44,24 @@ public class OrderService {
                 .build();
 
         for (OrderItemDto itemDto : request.getItems()) {
+            Product product = productRepository.findById(itemDto.getProductId())
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "Product not found: " + itemDto.getProductId()));
+
+            if (!product.getSeller().getId().equals(seller.getId())) {
+                throw new InvalidOrderStateException(
+                        "Product #" + product.getId() + " does not belong to seller #" + seller.getId());
+            }
+            if (!product.getAvailable()) {
+                throw new InvalidOrderStateException(
+                        "Product '" + product.getName() + "' is not available");
+            }
+
             OrderItem item = OrderItem.builder()
-                    .productName(itemDto.getProductName())
+                    .product(product)
+                    .productName(product.getName())
                     .quantity(itemDto.getQuantity())
-                    .price(itemDto.getPrice())
+                    .price(product.getPrice())
                     .build();
             order.addItem(item);
         }
@@ -108,9 +123,9 @@ public class OrderService {
         order = orderRepository.save(order);
 
         final Order savedOrder = order;
-        courierRepository.findFirstByAvailableTrue().ifPresent(courier -> {
-            assignCourier(savedOrder, courier);
-        });
+        courierRepository.findFirstByAvailableTrue().ifPresent(courier ->
+            assignCourier(savedOrder, courier)
+        );
 
         return toResponse(orderRepository.findById(orderId).orElseThrow());
     }
@@ -141,6 +156,8 @@ public class OrderService {
                     "Courier #" + courierId + " is not assigned to order #" + orderId);
         }
 
+        notificationService.notifySellerCourierAccepted(order);
+        notificationService.notifyCustomerStatusChanged(order);
         log.info("Order #{}: courier #{} accepted delivery request", orderId, courierId);
         return toResponse(order);
     }
@@ -166,6 +183,30 @@ public class OrderService {
 
         notificationService.notifyCustomerStatusChanged(order);
         log.info("Order #{}: courier arrived, status: IN_DELIVERY", orderId);
+        return toResponse(order);
+    }
+
+    @Transactional
+    public OrderResponse deliverOrder(Long orderId, Long courierId) {
+        Order order = findOrderOrThrow(orderId);
+        assertStatus(order, OrderStatus.IN_DELIVERY);
+
+        if (order.getCourier() == null || !order.getCourier().getId().equals(courierId)) {
+            throw new InvalidOrderStateException(
+                    "Courier #" + courierId + " is not assigned to order #" + orderId);
+        }
+
+        order.setStatus(OrderStatus.DELIVERED);
+        order.setDeliveredAt(LocalDateTime.now());
+        order = orderRepository.save(order);
+
+        Courier courier = order.getCourier();
+        courier.setAvailable(true);
+        courierRepository.save(courier);
+
+        notificationService.notifyCustomerStatusChanged(order);
+        notificationService.notifySellerOrderDelivered(order);
+        log.info("Order #{}: delivered by courier #{}, status: DELIVERED", orderId, courierId);
         return toResponse(order);
     }
 
@@ -257,6 +298,7 @@ public class OrderService {
                 .items(order.getItems().stream()
                         .map(i -> OrderItemResponse.builder()
                                 .id(i.getId())
+                                .productId(i.getProduct() != null ? i.getProduct().getId() : null)
                                 .productName(i.getProductName())
                                 .quantity(i.getQuantity())
                                 .price(i.getPrice())
@@ -264,6 +306,7 @@ public class OrderService {
                         .collect(Collectors.toList()))
                 .createdAt(order.getCreatedAt())
                 .updatedAt(order.getUpdatedAt())
+                .deliveredAt(order.getDeliveredAt())
                 .cancelReason(order.getCancelReason())
                 .build();
     }

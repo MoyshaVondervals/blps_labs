@@ -84,6 +84,16 @@ public class OrderController {
         return ResponseEntity.ok(orderService.courierArrived(orderId, courierId));
     }
 
+    @PostMapping("/{orderId}/courier/{courierId}/deliver")
+    @Operation(summary = "Курьер доставил заказ клиенту",
+            description = "BPMN: Курьер → 'Доставить заказ клиенту'. Переход IN_DELIVERY → DELIVERED. " +
+                    "Курьер освобождается для новых заказов.")
+    public ResponseEntity<OrderResponse> deliverOrder(
+            @PathVariable Long orderId,
+            @PathVariable Long courierId) {
+        return ResponseEntity.ok(orderService.deliverOrder(orderId, courierId));
+    }
+
     @GetMapping("/courier/{courierId}")
     @Operation(summary = "Получить заказы курьера")
     public ResponseEntity<List<OrderResponse>> getOrdersByCourier(@PathVariable Long courierId) {

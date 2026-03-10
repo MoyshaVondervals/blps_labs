@@ -21,6 +21,17 @@ CREATE TABLE IF NOT EXISTS couriers (
     created_at      TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS products (
+    id              BIGSERIAL PRIMARY KEY,
+    seller_id       BIGINT NOT NULL REFERENCES sellers(id),
+    name            VARCHAR(255) NOT NULL,
+    description     TEXT,
+    price           NUMERIC(12, 2) NOT NULL,
+    available       BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at      TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS orders (
     id              BIGSERIAL PRIMARY KEY,
     customer_id     BIGINT NOT NULL REFERENCES customers(id),
@@ -35,12 +46,14 @@ CREATE TABLE IF NOT EXISTS orders (
     courier_assigned_at     TIMESTAMP,
     courier_arrived_at      TIMESTAMP,
     cancelled_at            TIMESTAMP,
+    delivered_at            TIMESTAMP,
     cancel_reason           VARCHAR(500)
 );
 
 CREATE TABLE IF NOT EXISTS order_items (
     id              BIGSERIAL PRIMARY KEY,
     order_id        BIGINT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    product_id      BIGINT REFERENCES products(id),
     product_name    VARCHAR(255) NOT NULL,
     quantity        INT NOT NULL DEFAULT 1,
     price           NUMERIC(12, 2) NOT NULL DEFAULT 0
@@ -62,3 +75,5 @@ CREATE INDEX IF NOT EXISTS idx_orders_seller ON orders(seller_id);
 CREATE INDEX IF NOT EXISTS idx_orders_courier ON orders(courier_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_recipient ON notifications(recipient_type, recipient_id);
 CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);
+CREATE INDEX IF NOT EXISTS idx_products_seller ON products(seller_id);
+CREATE INDEX IF NOT EXISTS idx_order_items_product ON order_items(product_id);
