@@ -4,6 +4,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import ru.itmo.ordermanagement.dto.NotificationResponse;
 import ru.itmo.ordermanagement.model.entity.Notification;
 import ru.itmo.ordermanagement.model.entity.Order;
@@ -20,6 +22,7 @@ import java.util.stream.Collectors;
 public class NotificationService {
 
     private final NotificationRepository notificationRepository;
+    private final SseEmitterService sseEmitterService;
 
     @Transactional
     public Notification send(RecipientType recipientType, Long recipientId,
@@ -33,6 +36,15 @@ public class NotificationService {
                 .build();
         notification = notificationRepository.save(notification);
         log.info("Notification sent to {} #{}: {}", recipientType, recipientId, message);
+
+        NotificationResponse response = toResponse(notification);
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                sseEmitterService.sendNotification(recipientType, recipientId, response);
+            }
+        });
+
         return notification;
     }
 
@@ -55,6 +67,20 @@ public class NotificationService {
         String message = String.format("Уведомление о новом заказе #%d. Адрес заведения: %s",
                 order.getId(), order.getSeller().getAddress());
         send(RecipientType.COURIER, order.getCourier().getId(), order, message);
+    }
+
+    @Transactional
+    public void notifySellerCourierAccepted(Order order) {
+        String message = String.format("Курьер %s принял запрос на доставку заказа #%d",
+                order.getCourier().getName(), order.getId());
+        send(RecipientType.SELLER, order.getSeller().getId(), order, message);
+    }
+
+    @Transactional
+    public void notifySellerOrderDelivered(Order order) {
+        String message = String.format("Заказ #%d доставлен клиенту %s",
+                order.getId(), order.getCustomer().getName());
+        send(RecipientType.SELLER, order.getSeller().getId(), order, message);
     }
 
     public List<NotificationResponse> getNotifications(RecipientType recipientType, Long recipientId) {
@@ -104,6 +130,7 @@ public class NotificationService {
             case "AWAITING_COURIER" -> "Ожидание курьера";
             case "DELAYED" -> "Задерживается";
             case "IN_DELIVERY" -> "В доставке";
+            case "DELIVERED" -> "Доставлен";
             case "CANCELLED" -> "Отменён";
             default -> status;
         };

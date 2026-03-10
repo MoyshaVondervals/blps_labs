@@ -9,5 +9,6 @@ public enum OrderStatus {
     AWAITING_COURIER,
     DELAYED,
     IN_DELIVERY,
+    DELIVERED,
     CANCELLED
 }

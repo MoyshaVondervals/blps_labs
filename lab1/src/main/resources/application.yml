@@ -2,6 +2,10 @@ spring:
   application:
     name: order-management
 
+  mvc:
+    async:
+      request-timeout: 1800000  # 30 минут для SSE-соединений
+
   datasource:
     url: jdbc:postgresql://localhost:5432/order_management
     username: postgres

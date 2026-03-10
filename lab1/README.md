@@ -1,129 +1,35 @@
-# Order Management — BPMN Business Process Implementation
 
-## Описание
 
-Spring Boot приложение, реализующее бизнес-процесс **"Работа с интерфейсом продавца — управление заказами"** в соответствии с BPMN 2.0 диаграммой.
-
-## Бизнес-процесс (BPMN)
-
-### Участники (пулы)
-
-| Пул | Описание |
-|-----|----------|
-| **Заказчик** | Создаёт заказ, получает уведомления о статусах |
-| **Продавец** | Проверяет, готовит, собирает заказ, ищет курьера |
-| **Курьер (Yandex Delivery)** | Принимает доставку, приходит в заведение |
-
-### Жизненный цикл заказа
-
-```
-CREATED → IN_PROCESSING → COOKING → ASSEMBLING → SEARCHING_COURIER → AWAITING_COURIER → IN_DELIVERY
-                        ↘ CANCELLED (продавец отклонил или таймаут 10 мин)
-                                                                      ↘ DELAYED (курьер опаздывает)
-```
-
-### Шаги бизнес-процесса
-
-1. **Заказчик** собирает товары в корзину → **Создать заказ** → статус `IN_PROCESSING`
-2. **Продавец** получает уведомление → **Проверить заказ** → решение: "Возможно ли выполнить?"
-   - **Да** → **Передать на приготовление** → статус `COOKING`
-   - **Нет** → **Отменить заказ** → статус `CANCELLED`
-3. **Продавец** → **Собрать заказ** → статус `ASSEMBLING`
-4. **Продавец** → **Искать курьера** → статус `SEARCHING_COURIER` / `AWAITING_COURIER`
-5. **Курьер** получает уведомление → **Принял запрос на доставку**
-6. **Курьер** → **Пришёл в заведение** → **Продавец передаёт заказ курьеру** → статус `IN_DELIVERY`
-
-### Таймеры (Timer Events)
-
-- ⏱ **Продавец не реагирует 10 минут** → заказ автоматически отменяется
-- ⏱ **Курьер не пришёл к назначенному времени** → статус `DELAYED`
-
-## Технологии
-
-- Java 17
-- Spring Boot 3.2.5
-- Spring Data JPA
-- PostgreSQL
-- SpringDoc OpenAPI (Swagger UI)
-- Lombok
-
-## Запуск
-
-### 1. Подготовка БД
-
-```bash
-# Создать БД PostgreSQL
-createdb order_management
-
-# Применить схему
-psql -d order_management -f src/main/resources/schema.sql
-```
-
-### 2. Настройка подключения
-
-Отредактируйте `src/main/resources/application.yml`:
-
-```yaml
-spring:
-  datasource:
-    url: jdbc:postgresql://localhost:5432/order_management
-    username: postgres
-    password: postgres
-```
-
-### 3. Сборка и запуск
-
-```bash
-./mvnw clean package -DskipTests
-java -jar target/order-management-0.0.1-SNAPSHOT.jar
-```
-
-Или через Maven:
-
-```bash
-./mvnw spring-boot:run
-```
-
-### 4. Swagger UI
-
-После запуска: [http://localhost:8080/swagger-ui.html](http://localhost:8080/swagger-ui.html)
-
-## REST API
-
-### Заказчики `/api/customers`
-
-| Метод | URL | Описание |
-|-------|-----|----------|
 | POST | `/api/customers` | Создать заказчика |
 | GET | `/api/customers` | Получить всех |
 | GET | `/api/customers/{id}` | Получить по ID |
 
-### Продавцы `/api/sellers`
 
-| Метод | URL | Описание |
-|-------|-----|----------|
 | POST | `/api/sellers` | Создать продавца |
 | GET | `/api/sellers` | Получить всех |
 | GET | `/api/sellers/{id}` | Получить по ID |
 
-### Курьеры `/api/couriers`
 
-| Метод | URL | Описание |
-|-------|-----|----------|
 | POST | `/api/couriers` | Создать курьера |
 | GET | `/api/couriers` | Получить всех |
 | GET | `/api/couriers/{id}` | Получить по ID |
 
-### Заказы `/api/orders`
 
-| Метод | URL | BPMN шаг | Описание |
-|-------|-----|----------|----------|
+| POST | `/api/products` | Создать товар (продавец) |
+| PUT | `/api/products/{id}` | Обновить товар |
+| DELETE | `/api/products/{id}` | Удалить товар |
+| GET | `/api/products/{id}` | Получить товар по ID |
+| GET | `/api/products/seller/{sellerId}` | Все товары продавца |
+| GET | `/api/products/seller/{sellerId}/available` | Доступные товары продавца |
+
+
 | POST | `/api/orders` | Создать заказ | Заказчик создаёт заказ |
 | POST | `/api/orders/{id}/review` | Проверить заказ | Продавец принимает/отклоняет |
 | POST | `/api/orders/{id}/assemble` | Собрать заказ | Продавец собирает |
 | POST | `/api/orders/{id}/search-courier` | Искать курьера | Продавец ищет курьера |
 | POST | `/api/orders/{id}/courier/{cId}/accept` | Принял доставку | Курьер принимает |
 | POST | `/api/orders/{id}/courier/{cId}/arrived` | Пришёл в заведение | Курьер пришёл |
+| POST | `/api/orders/{id}/courier/{cId}/deliver` | Доставил заказ | Курьер доставил клиенту |
 | GET | `/api/orders/{id}` | — | Получить заказ |
 | GET | `/api/orders` | — | Все заказы |
 | GET | `/api/orders/status/{status}` | — | По статусу |
@@ -131,52 +37,70 @@ java -jar target/order-management-0.0.1-SNAPSHOT.jar
 | GET | `/api/orders/seller/{id}` | — | Заказы продавца |
 | GET | `/api/orders/courier/{id}` | — | Заказы курьера |
 
-### Уведомления `/api/notifications`
 
-| Метод | URL | Описание |
-|-------|-----|----------|
 | GET | `/api/notifications/{type}/{id}` | Все уведомления |
 | GET | `/api/notifications/{type}/{id}/unread` | Непрочитанные |
 | POST | `/api/notifications/{id}/read` | Отметить прочитанным |
 
-## Пример сценария (curl)
 
-```bash
-# 1. Создать участников
+| GET | `/api/sse/notifications/CUSTOMER/{id}` | SSE-поток уведомлений покупателя |
+| GET | `/api/sse/notifications/SELLER/{id}` | SSE-поток уведомлений продавца |
+| GET | `/api/sse/notifications/COURIER/{id}` | SSE-поток уведомлений курьера |
+
+
+```
+# создать участников
 curl -X POST http://localhost:8080/api/customers \
-  -H "Content-Type: application/json" \
   -d '{"name": "Иван Иванов", "email": "ivan@mail.ru", "phone": "+79001234567"}'
 
 curl -X POST http://localhost:8080/api/sellers \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Пиццерия Марио", "address": "ул. Ленина, 42"}'
+  -d '{"name": "Додопитса", "address": "Микробарберс"}'
 
 curl -X POST http://localhost:8080/api/couriers \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Курьер Алексей", "phone": "+79009876543"}'
+  -d '{"name": "Карапет", "phone": "+79009876543"}'
 
-# 2. Создать заказ (→ IN_PROCESSING)
+# 1.5. добавить товары
+curl -X POST http://localhost:8080/api/products \
+  -d '{"sellerId": 1, "name": "Пицца 4 сыра мазератти", "description": "Пицца 4 сыра мацерари с присадками", "price": 228.00}'
+
+curl -X POST http://localhost:8080/api/products \
+  -d '{"sellerId": 1, "name": "Сыр Сухочини", "description": "Итальянский сыр Сухочини, из микробарберса", "price": 1337.00}'
+
+# посмотреть доступные товары
+curl http://localhost:8080/api/products/seller/1/available
+
+# создать заказ
 curl -X POST http://localhost:8080/api/orders \
-  -H "Content-Type: application/json" \
-  -d '{"customerId": 1, "sellerId": 1, "items": [{"productName": "Пицца Маргарита", "quantity": 2, "price": 599.00}]}'
+  -d '{"customerId": 1, "sellerId": 1, "items": [{"productId": 1, "quantity": 2}]}'
 
-# 3. Продавец принимает заказ (→ COOKING)
+#  продавец принимает заказ
 curl -X POST http://localhost:8080/api/orders/1/review \
   -H "Content-Type: application/json" \
   -d '{"canFulfill": true}'
 
-# 4. Собрать заказ (→ ASSEMBLING)
+# сборка заказа
 curl -X POST http://localhost:8080/api/orders/1/assemble
 
-# 5. Искать курьера (→ AWAITING_COURIER)
+# поиск курьера
 curl -X POST http://localhost:8080/api/orders/1/search-courier
 
-# 6. Курьер принимает
+# курьер откликнулся
 curl -X POST http://localhost:8080/api/orders/1/courier/1/accept
 
-# 7. Курьер пришёл (→ IN_DELIVERY)
+# 7. курьер забрал
 curl -X POST http://localhost:8080/api/orders/1/courier/1/arrived
 
-# Проверить уведомления покупателя
+# 8. курьер доставил заказ
+curl -X POST http://localhost:8080/api/orders/1/courier/1/deliver
+
+# проверить уведы
 curl http://localhost:8080/api/notifications/CUSTOMER/1
+
+# подписаться
+# Покупатель
+curl -N http://localhost:8080/api/sse/notifications/CUSTOMER/1
+# Продавец
+curl -N http://localhost:8080/api/sse/notifications/SELLER/1
+# Курьер
+curl -N http://localhost:8080/api/sse/notifications/COURIER/1
 ```
