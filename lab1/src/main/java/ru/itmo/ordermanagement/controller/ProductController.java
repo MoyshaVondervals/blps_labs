@@ -4,6 +4,9 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -52,16 +55,19 @@ public class ProductController {
     }
 
     @GetMapping("/seller/{sellerId}")
-    @Operation(summary = "Получить все товары продавца")
-    public ResponseEntity<List<ProductResponse>> getBySeller(@PathVariable Long sellerId) {
-        return ResponseEntity.ok(productService.getProductsBySeller(sellerId));
+    @Operation(summary = "Получить товары продавца с пагинацией")
+    public ResponseEntity<Page<ProductResponse>> getBySeller(
+            @PathVariable Long sellerId,
+            @PageableDefault(sort = "id") Pageable pageable) {
+        return ResponseEntity.ok(productService.getProductsBySeller(sellerId, pageable));
     }
 
     @GetMapping("/seller/{sellerId}/available")
     @Operation(summary = "Получить доступные товары продавца",
             description = "Только товары с available=true — для отображения покупателю")
-    public ResponseEntity<List<ProductResponse>> getAvailableBySeller(@PathVariable Long sellerId) {
-        return ResponseEntity.ok(productService.getAvailableProductsBySeller(sellerId));
+    public ResponseEntity<Page<ProductResponse>> getAvailableBySeller(@PathVariable Long sellerId,
+                                                                      @PageableDefault Pageable pageable) {
+        return ResponseEntity.ok(productService.getAvailableProductsBySeller(sellerId, pageable));
     }
 }
 

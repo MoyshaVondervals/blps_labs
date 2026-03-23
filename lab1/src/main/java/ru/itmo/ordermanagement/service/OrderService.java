@@ -2,6 +2,8 @@ package ru.itmo.ordermanagement.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
@@ -215,35 +217,34 @@ public class OrderService {
         return toResponse(findOrderOrThrow(orderId));
     }
 
-    public List<OrderResponse> getOrdersByCustomer(Long customerId) {
-        return orderRepository.findByCustomerId(customerId).stream()
-                .map(this::toResponse).collect(Collectors.toList());
+    public Page<OrderResponse> getOrdersByCustomer(Long customerId, Pageable pageable) {
+        return orderRepository.findByCustomerId(customerId, pageable)
+                .map(this::toResponse);
     }
 
-    public List<OrderResponse> getOrdersBySeller(Long sellerId) {
-        return orderRepository.findBySellerId(sellerId).stream()
-                .map(this::toResponse).collect(Collectors.toList());
+    public Page<OrderResponse> getOrdersBySeller(Long sellerId, Pageable pageable) {
+        return orderRepository.findBySellerId(sellerId, pageable)
+                .map(this::toResponse);
     }
 
-    public List<OrderResponse> getOrdersByCourier(Long courierId) {
-        return orderRepository.findByCourierId(courierId).stream()
-                .map(this::toResponse).collect(Collectors.toList());
+    public Page<OrderResponse> getOrdersByCourier(Long courierId, Pageable pageable) {
+        return orderRepository.findByCourierId(courierId, pageable)
+                .map(this::toResponse);
     }
 
-    public List<OrderResponse> getOrdersByStatus(OrderStatus status) {
-        return orderRepository.findByStatus(status).stream()
-                .map(this::toResponse).collect(Collectors.toList());
+    public Page<OrderResponse> getOrdersByStatus(OrderStatus status, Pageable pageable) {
+        return orderRepository.findByStatus(status, pageable)
+                .map(this::toResponse);
     }
 
-    public List<OrderResponse> getAllOrders() {
-        return orderRepository.findAll().stream()
-                .map(this::toResponse).collect(Collectors.toList());
+    public Page<OrderResponse> getAllOrders(Pageable pageable) {
+        return orderRepository.findAll(pageable).map(this::toResponse);
     }
 
     @Transactional(isolation = Isolation.SERIALIZABLE)
     public void cancelOverdueOrders(int timeoutMinutes) {
         LocalDateTime deadline = LocalDateTime.now().minusMinutes(timeoutMinutes);
-        List<Order> overdueOrders = orderRepository
+        Page<Order> overdueOrders = orderRepository
                 .findByStatusAndSellerNotifiedAtBefore(OrderStatus.IN_PROCESSING, deadline);
 
         for (Order order : overdueOrders) {
@@ -260,7 +261,7 @@ public class OrderService {
     @Transactional(isolation = Isolation.REPEATABLE_READ)
     public void markDelayedOrders(int timeoutMinutes) {
         LocalDateTime deadline = LocalDateTime.now().minusMinutes(timeoutMinutes);
-        List<Order> delayedOrders = orderRepository
+        Page<Order> delayedOrders = orderRepository
                 .findByStatusAndCourierAssignedAtBefore(OrderStatus.AWAITING_COURIER, deadline);
 
         for (Order order : delayedOrders) {

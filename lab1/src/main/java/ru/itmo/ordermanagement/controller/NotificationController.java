@@ -3,6 +3,9 @@ package ru.itmo.ordermanagement.controller;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import ru.itmo.ordermanagement.dto.NotificationResponse;
@@ -22,18 +25,21 @@ public class NotificationController {
     @GetMapping("/{recipientType}/{recipientId}")
     @Operation(summary = "Получить все уведомления получателя",
             description = "recipientType: CUSTOMER, SELLER, COURIER")
-    public ResponseEntity<List<NotificationResponse>> getNotifications(
+    public ResponseEntity<Page<NotificationResponse>> getNotifications(
             @PathVariable RecipientType recipientType,
-            @PathVariable Long recipientId) {
-        return ResponseEntity.ok(notificationService.getNotifications(recipientType, recipientId));
+            @PathVariable Long recipientId,
+            @PageableDefault Pageable pageable
+    ) {
+        return ResponseEntity.ok(notificationService.getNotifications(recipientType, recipientId, pageable));
     }
 
     @GetMapping("/{recipientType}/{recipientId}/unread")
     @Operation(summary = "Получить непрочитанные уведомления получателя")
-    public ResponseEntity<List<NotificationResponse>> getUnreadNotifications(
+    public ResponseEntity<Page<NotificationResponse>> getUnreadNotifications(
             @PathVariable RecipientType recipientType,
-            @PathVariable Long recipientId) {
-        return ResponseEntity.ok(notificationService.getUnreadNotifications(recipientType, recipientId));
+            @PathVariable Long recipientId,
+            @PageableDefault Pageable pageable) {
+        return ResponseEntity.ok(notificationService.getUnreadNotifications(recipientType, recipientId, pageable));
     }
 
     @PostMapping("/{notificationId}/read")

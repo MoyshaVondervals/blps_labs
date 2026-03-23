@@ -2,12 +2,15 @@ package ru.itmo.ordermanagement.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import ru.itmo.ordermanagement.dto.NotificationResponse;
+import ru.itmo.ordermanagement.exception.ResourceNotFoundException;
 import ru.itmo.ordermanagement.model.entity.Notification;
 import ru.itmo.ordermanagement.model.entity.Order;
 import ru.itmo.ordermanagement.model.enums.RecipientType;
@@ -84,26 +87,22 @@ public class NotificationService {
         send(RecipientType.SELLER, order.getSeller().getId(), order, message);
     }
 
-    public List<NotificationResponse> getNotifications(RecipientType recipientType, Long recipientId) {
+    public Page<NotificationResponse> getNotifications(RecipientType recipientType, Long recipientId, Pageable pageable) {
         return notificationRepository
-                .findByRecipientTypeAndRecipientIdOrderByCreatedAtDesc(recipientType, recipientId)
-                .stream()
-                .map(this::toResponse)
-                .collect(Collectors.toList());
+                .findByRecipientTypeAndRecipientIdOrderByCreatedAtDesc(recipientType, recipientId, pageable)
+                .map(this::toResponse);
     }
 
-    public List<NotificationResponse> getUnreadNotifications(RecipientType recipientType, Long recipientId) {
+    public Page<NotificationResponse> getUnreadNotifications(RecipientType recipientType, Long recipientId, Pageable pageable) {
         return notificationRepository
-                .findByRecipientTypeAndRecipientIdAndIsReadFalseOrderByCreatedAtDesc(recipientType, recipientId)
-                .stream()
-                .map(this::toResponse)
-                .collect(Collectors.toList());
+                .findByRecipientTypeAndRecipientIdAndIsReadFalseOrderByCreatedAtDesc(recipientType, recipientId, pageable)
+                .map(this::toResponse);
     }
 
     @Transactional(isolation = Isolation.REPEATABLE_READ)
     public void markAsRead(Long notificationId) {
         Notification notification = notificationRepository.findById(notificationId)
-                .orElseThrow(() -> new ru.itmo.ordermanagement.exception.ResourceNotFoundException(
+                .orElseThrow(() -> new ResourceNotFoundException(
                         "Notification not found: " + notificationId));
         notification.setIsRead(true);
         notificationRepository.save(notification);
