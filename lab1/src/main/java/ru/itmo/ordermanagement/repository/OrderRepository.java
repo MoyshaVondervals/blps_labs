@@ -20,7 +20,7 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
 
     Page<Order> findByCourierId(Long courierId, Pageable pageable);
 
-    Page<Order> findByStatusAndSellerNotifiedAtBefore(OrderStatus status, LocalDateTime deadline);
+    Page<Order> findByStatusAndSellerNotifiedAtBefore(OrderStatus status, LocalDateTime deadline, Pageable pageable);
 
-    Page<Order> findByStatusAndCourierAssignedAtBefore(OrderStatus status, LocalDateTime deadline);
+    Page<Order> findByStatusAndCourierAssignedAtBefore(OrderStatus status, LocalDateTime deadline, Pageable pageable);
 }

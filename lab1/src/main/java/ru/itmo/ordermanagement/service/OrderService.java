@@ -3,7 +3,9 @@ package ru.itmo.ordermanagement.service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
@@ -243,34 +245,53 @@ public class OrderService {
 
     @Transactional(isolation = Isolation.SERIALIZABLE)
     public void cancelOverdueOrders(int timeoutMinutes) {
+
         LocalDateTime deadline = LocalDateTime.now().minusMinutes(timeoutMinutes);
-        Page<Order> overdueOrders = orderRepository
-                .findByStatusAndSellerNotifiedAtBefore(OrderStatus.IN_PROCESSING, deadline);
+        Pageable batch = PageRequest.of(0, 100, Sort.by("id").ascending());
+        while (true){
+            Page<Order> overdueOrders = orderRepository
+                    .findByStatusAndSellerNotifiedAtBefore(OrderStatus.IN_PROCESSING, deadline, batch);
+            if (overdueOrders.isEmpty()) {
+                break;
+            }
+            for (Order order : overdueOrders) {
+                order.setStatus(OrderStatus.CANCELLED);
+                order.setCancelledAt(LocalDateTime.now());
+                order.setCancelReason("Продавец не реагирует в течение " + timeoutMinutes + " минут");
+                orderRepository.save(order);
 
-        for (Order order : overdueOrders) {
-            order.setStatus(OrderStatus.CANCELLED);
-            order.setCancelledAt(LocalDateTime.now());
-            order.setCancelReason("Продавец не реагирует в течение " + timeoutMinutes + " минут");
-            orderRepository.save(order);
+                notificationService.notifyCustomerStatusChanged(order);
+                log.warn("Order #{} auto-cancelled: seller timeout ({} min)", order.getId(), timeoutMinutes);
+            }
 
-            notificationService.notifyCustomerStatusChanged(order);
-            log.warn("Order #{} auto-cancelled: seller timeout ({} min)", order.getId(), timeoutMinutes);
+
         }
+
+
+
     }
 
     @Transactional(isolation = Isolation.REPEATABLE_READ)
     public void markDelayedOrders(int timeoutMinutes) {
         LocalDateTime deadline = LocalDateTime.now().minusMinutes(timeoutMinutes);
-        Page<Order> delayedOrders = orderRepository
-                .findByStatusAndCourierAssignedAtBefore(OrderStatus.AWAITING_COURIER, deadline);
+        Pageable batch = PageRequest.of(0, 100, Sort.by("id").ascending());
+        while (true){
+            Page<Order> delayedOrders = orderRepository
+                    .findByStatusAndCourierAssignedAtBefore(OrderStatus.AWAITING_COURIER, deadline, batch);
+            if (delayedOrders.isEmpty()) {
+                break;
+            }
 
-        for (Order order : delayedOrders) {
-            order.setStatus(OrderStatus.DELAYED);
-            orderRepository.save(order);
+            for (Order order : delayedOrders) {
+                order.setStatus(OrderStatus.DELAYED);
+                orderRepository.save(order);
 
-            notificationService.notifyCustomerStatusChanged(order);
-            log.warn("Order #{} marked as DELAYED: courier timeout ({} min)", order.getId(), timeoutMinutes);
+                notificationService.notifyCustomerStatusChanged(order);
+                log.warn("Order #{} marked as DELAYED: courier timeout ({} min)", order.getId(), timeoutMinutes);
+            }
+
         }
+
     }
 
     private Order findOrderOrThrow(Long orderId) {
