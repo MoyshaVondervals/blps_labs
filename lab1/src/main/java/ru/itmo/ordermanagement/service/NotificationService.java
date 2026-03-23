@@ -3,6 +3,7 @@ package ru.itmo.ordermanagement.service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -24,7 +25,7 @@ public class NotificationService {
     private final NotificationRepository notificationRepository;
     private final SseEmitterService sseEmitterService;
 
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public Notification send(RecipientType recipientType, Long recipientId,
                              Order order, String message) {
         Notification notification = Notification.builder()
@@ -48,35 +49,35 @@ public class NotificationService {
         return notification;
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public void notifyCustomerStatusChanged(Order order) {
         String message = String.format("Изменён статус заказа #%d: \"%s\"",
                 order.getId(), translateStatus(order.getStatus().name()));
         send(RecipientType.CUSTOMER, order.getCustomer().getId(), order, message);
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public void notifySellerNewOrder(Order order) {
         String message = String.format("Новый заказ #%d от покупателя %s",
                 order.getId(), order.getCustomer().getName());
         send(RecipientType.SELLER, order.getSeller().getId(), order, message);
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public void notifyCourierNewDelivery(Order order) {
         String message = String.format("Уведомление о новом заказе #%d. Адрес заведения: %s",
                 order.getId(), order.getSeller().getAddress());
         send(RecipientType.COURIER, order.getCourier().getId(), order, message);
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public void notifySellerCourierAccepted(Order order) {
         String message = String.format("Курьер %s принял запрос на доставку заказа #%d",
                 order.getCourier().getName(), order.getId());
         send(RecipientType.SELLER, order.getSeller().getId(), order, message);
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public void notifySellerOrderDelivered(Order order) {
         String message = String.format("Заказ #%d доставлен клиенту %s",
                 order.getId(), order.getCustomer().getName());
@@ -99,7 +100,7 @@ public class NotificationService {
                 .collect(Collectors.toList());
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.REPEATABLE_READ)
     public void markAsRead(Long notificationId) {
         Notification notification = notificationRepository.findById(notificationId)
                 .orElseThrow(() -> new ru.itmo.ordermanagement.exception.ResourceNotFoundException(

@@ -3,6 +3,7 @@ package ru.itmo.ordermanagement.service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import ru.itmo.ordermanagement.dto.*;
 import ru.itmo.ordermanagement.exception.InvalidOrderStateException;
@@ -27,7 +28,7 @@ public class OrderService {
     private final ProductRepository productRepository;
     private final NotificationService notificationService;
 
-    @Transactional
+    @Transactional(isolation = Isolation.SERIALIZABLE)
     public OrderResponse createOrder(CreateOrderRequest request) {
         Customer customer = customerRepository.findById(request.getCustomerId())
                 .orElseThrow(() -> new ResourceNotFoundException(
@@ -77,7 +78,7 @@ public class OrderService {
         return toResponse(order);
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.REPEATABLE_READ)
     public OrderResponse reviewOrder(Long orderId, ReviewOrderRequest request) {
         Order order = findOrderOrThrow(orderId);
         assertStatus(order, OrderStatus.IN_PROCESSING);
@@ -101,7 +102,7 @@ public class OrderService {
         return toResponse(order);
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.REPEATABLE_READ)
     public OrderResponse assembleOrder(Long orderId) {
         Order order = findOrderOrThrow(orderId);
         assertStatus(order, OrderStatus.COOKING);
@@ -114,7 +115,7 @@ public class OrderService {
         return toResponse(order);
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.SERIALIZABLE)
     public OrderResponse searchCourier(Long orderId) {
         Order order = findOrderOrThrow(orderId);
         assertStatus(order, OrderStatus.ASSEMBLING);
@@ -130,7 +131,7 @@ public class OrderService {
         return toResponse(orderRepository.findById(orderId).orElseThrow());
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.SERIALIZABLE)
     public void assignCourier(Order order, Courier courier) {
         courier.setAvailable(false);
         courierRepository.save(courier);
@@ -146,7 +147,7 @@ public class OrderService {
                 order.getId(), courier.getId());
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.REPEATABLE_READ)
     public OrderResponse courierAcceptDelivery(Long orderId, Long courierId) {
         Order order = findOrderOrThrow(orderId);
         assertStatus(order, OrderStatus.AWAITING_COURIER);
@@ -162,7 +163,7 @@ public class OrderService {
         return toResponse(order);
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.REPEATABLE_READ)
     public OrderResponse courierArrived(Long orderId, Long courierId) {
         Order order = findOrderOrThrow(orderId);
 
@@ -186,7 +187,7 @@ public class OrderService {
         return toResponse(order);
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.REPEATABLE_READ)
     public OrderResponse deliverOrder(Long orderId, Long courierId) {
         Order order = findOrderOrThrow(orderId);
         assertStatus(order, OrderStatus.IN_DELIVERY);
@@ -239,7 +240,7 @@ public class OrderService {
                 .map(this::toResponse).collect(Collectors.toList());
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.SERIALIZABLE)
     public void cancelOverdueOrders(int timeoutMinutes) {
         LocalDateTime deadline = LocalDateTime.now().minusMinutes(timeoutMinutes);
         List<Order> overdueOrders = orderRepository
@@ -256,7 +257,7 @@ public class OrderService {
         }
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.REPEATABLE_READ)
     public void markDelayedOrders(int timeoutMinutes) {
         LocalDateTime deadline = LocalDateTime.now().minusMinutes(timeoutMinutes);
         List<Order> delayedOrders = orderRepository
