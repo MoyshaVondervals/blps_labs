@@ -31,6 +31,7 @@ public class OrderService {
     private final CourierRepository courierRepository;
     private final ProductRepository productRepository;
     private final NotificationService notificationService;
+    private final OrderBatchTransactionService orderBatchTransactionService;
 
     @Transactional(isolation = Isolation.SERIALIZABLE)
     public OrderResponse createOrder(CreateOrderRequest request) {
@@ -243,7 +244,6 @@ public class OrderService {
         return orderRepository.findAll(pageable).map(this::toResponse);
     }
 
-    @Transactional(isolation = Isolation.SERIALIZABLE)
     public void cancelOverdueOrders(int timeoutMinutes) {
 
         LocalDateTime deadline = LocalDateTime.now().minusMinutes(timeoutMinutes);
@@ -254,24 +254,14 @@ public class OrderService {
             if (overdueOrders.isEmpty()) {
                 break;
             }
-            for (Order order : overdueOrders) {
-                order.setStatus(OrderStatus.CANCELLED);
-                order.setCancelledAt(LocalDateTime.now());
-                order.setCancelReason("Продавец не реагирует в течение " + timeoutMinutes + " минут");
-                orderRepository.save(order);
 
-                notificationService.notifyCustomerStatusChanged(order);
-                log.warn("Order #{} auto-cancelled: seller timeout ({} min)", order.getId(), timeoutMinutes);
-            }
-
-
+            List<Long> overdueOrderIds = overdueOrders.stream()
+                    .map(Order::getId)
+                    .toList();
+            orderBatchTransactionService.cancelOverdueBatch(overdueOrderIds, timeoutMinutes);
         }
-
-
-
     }
 
-    @Transactional(isolation = Isolation.REPEATABLE_READ)
     public void markDelayedOrders(int timeoutMinutes) {
         LocalDateTime deadline = LocalDateTime.now().minusMinutes(timeoutMinutes);
         Pageable batch = PageRequest.of(0, 100, Sort.by("id").ascending());
@@ -282,14 +272,10 @@ public class OrderService {
                 break;
             }
 
-            for (Order order : delayedOrders) {
-                order.setStatus(OrderStatus.DELAYED);
-                orderRepository.save(order);
-
-                notificationService.notifyCustomerStatusChanged(order);
-                log.warn("Order #{} marked as DELAYED: courier timeout ({} min)", order.getId(), timeoutMinutes);
-            }
-
+            List<Long> delayedOrderIds = delayedOrders.stream()
+                    .map(Order::getId)
+                    .toList();
+            orderBatchTransactionService.markDelayedBatch(delayedOrderIds, timeoutMinutes);
         }
 
     }
