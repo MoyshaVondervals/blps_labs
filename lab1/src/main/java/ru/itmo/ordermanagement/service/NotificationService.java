@@ -2,11 +2,15 @@ package ru.itmo.ordermanagement.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import ru.itmo.ordermanagement.dto.NotificationResponse;
+import ru.itmo.ordermanagement.exception.ResourceNotFoundException;
 import ru.itmo.ordermanagement.model.entity.Notification;
 import ru.itmo.ordermanagement.model.entity.Order;
 import ru.itmo.ordermanagement.model.enums.RecipientType;
@@ -24,7 +28,7 @@ public class NotificationService {
     private final NotificationRepository notificationRepository;
     private final SseEmitterService sseEmitterService;
 
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public Notification send(RecipientType recipientType, Long recipientId,
                              Order order, String message) {
         Notification notification = Notification.builder()
@@ -48,61 +52,57 @@ public class NotificationService {
         return notification;
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public void notifyCustomerStatusChanged(Order order) {
         String message = String.format("Изменён статус заказа #%d: \"%s\"",
                 order.getId(), translateStatus(order.getStatus().name()));
         send(RecipientType.CUSTOMER, order.getCustomer().getId(), order, message);
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public void notifySellerNewOrder(Order order) {
         String message = String.format("Новый заказ #%d от покупателя %s",
                 order.getId(), order.getCustomer().getName());
         send(RecipientType.SELLER, order.getSeller().getId(), order, message);
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public void notifyCourierNewDelivery(Order order) {
         String message = String.format("Уведомление о новом заказе #%d. Адрес заведения: %s",
                 order.getId(), order.getSeller().getAddress());
         send(RecipientType.COURIER, order.getCourier().getId(), order, message);
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public void notifySellerCourierAccepted(Order order) {
         String message = String.format("Курьер %s принял запрос на доставку заказа #%d",
                 order.getCourier().getName(), order.getId());
         send(RecipientType.SELLER, order.getSeller().getId(), order, message);
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public void notifySellerOrderDelivered(Order order) {
         String message = String.format("Заказ #%d доставлен клиенту %s",
                 order.getId(), order.getCustomer().getName());
         send(RecipientType.SELLER, order.getSeller().getId(), order, message);
     }
 
-    public List<NotificationResponse> getNotifications(RecipientType recipientType, Long recipientId) {
+    public Page<NotificationResponse> getNotifications(RecipientType recipientType, Long recipientId, Pageable pageable) {
         return notificationRepository
-                .findByRecipientTypeAndRecipientIdOrderByCreatedAtDesc(recipientType, recipientId)
-                .stream()
-                .map(this::toResponse)
-                .collect(Collectors.toList());
+                .findByRecipientTypeAndRecipientIdOrderByCreatedAtDesc(recipientType, recipientId, pageable)
+                .map(this::toResponse);
     }
 
-    public List<NotificationResponse> getUnreadNotifications(RecipientType recipientType, Long recipientId) {
+    public Page<NotificationResponse> getUnreadNotifications(RecipientType recipientType, Long recipientId, Pageable pageable) {
         return notificationRepository
-                .findByRecipientTypeAndRecipientIdAndIsReadFalseOrderByCreatedAtDesc(recipientType, recipientId)
-                .stream()
-                .map(this::toResponse)
-                .collect(Collectors.toList());
+                .findByRecipientTypeAndRecipientIdAndIsReadFalseOrderByCreatedAtDesc(recipientType, recipientId, pageable)
+                .map(this::toResponse);
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.REPEATABLE_READ)
     public void markAsRead(Long notificationId) {
         Notification notification = notificationRepository.findById(notificationId)
-                .orElseThrow(() -> new ru.itmo.ordermanagement.exception.ResourceNotFoundException(
+                .orElseThrow(() -> new ResourceNotFoundException(
                         "Notification not found: " + notificationId));
         notification.setIsRead(true);
         notificationRepository.save(notification);

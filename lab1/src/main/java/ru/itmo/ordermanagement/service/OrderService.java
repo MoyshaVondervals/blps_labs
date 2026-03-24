@@ -2,7 +2,12 @@ package ru.itmo.ordermanagement.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import ru.itmo.ordermanagement.dto.*;
 import ru.itmo.ordermanagement.exception.InvalidOrderStateException;
@@ -27,7 +32,7 @@ public class OrderService {
     private final ProductRepository productRepository;
     private final NotificationService notificationService;
 
-    @Transactional
+    @Transactional(isolation = Isolation.SERIALIZABLE)
     public OrderResponse createOrder(CreateOrderRequest request) {
         Customer customer = customerRepository.findById(request.getCustomerId())
                 .orElseThrow(() -> new ResourceNotFoundException(
@@ -77,7 +82,7 @@ public class OrderService {
         return toResponse(order);
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.REPEATABLE_READ)
     public OrderResponse reviewOrder(Long orderId, ReviewOrderRequest request) {
         Order order = findOrderOrThrow(orderId);
         assertStatus(order, OrderStatus.IN_PROCESSING);
@@ -101,7 +106,7 @@ public class OrderService {
         return toResponse(order);
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.REPEATABLE_READ)
     public OrderResponse assembleOrder(Long orderId) {
         Order order = findOrderOrThrow(orderId);
         assertStatus(order, OrderStatus.COOKING);
@@ -114,7 +119,7 @@ public class OrderService {
         return toResponse(order);
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.SERIALIZABLE)
     public OrderResponse searchCourier(Long orderId) {
         Order order = findOrderOrThrow(orderId);
         assertStatus(order, OrderStatus.ASSEMBLING);
@@ -130,7 +135,7 @@ public class OrderService {
         return toResponse(orderRepository.findById(orderId).orElseThrow());
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.SERIALIZABLE)
     public void assignCourier(Order order, Courier courier) {
         courier.setAvailable(false);
         courierRepository.save(courier);
@@ -146,7 +151,7 @@ public class OrderService {
                 order.getId(), courier.getId());
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.REPEATABLE_READ)
     public OrderResponse courierAcceptDelivery(Long orderId, Long courierId) {
         Order order = findOrderOrThrow(orderId);
         assertStatus(order, OrderStatus.AWAITING_COURIER);
@@ -162,7 +167,7 @@ public class OrderService {
         return toResponse(order);
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.REPEATABLE_READ)
     public OrderResponse courierArrived(Long orderId, Long courierId) {
         Order order = findOrderOrThrow(orderId);
 
@@ -186,7 +191,7 @@ public class OrderService {
         return toResponse(order);
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.REPEATABLE_READ)
     public OrderResponse deliverOrder(Long orderId, Long courierId) {
         Order order = findOrderOrThrow(orderId);
         assertStatus(order, OrderStatus.IN_DELIVERY);
@@ -214,61 +219,79 @@ public class OrderService {
         return toResponse(findOrderOrThrow(orderId));
     }
 
-    public List<OrderResponse> getOrdersByCustomer(Long customerId) {
-        return orderRepository.findByCustomerId(customerId).stream()
-                .map(this::toResponse).collect(Collectors.toList());
+    public Page<OrderResponse> getOrdersByCustomer(Long customerId, Pageable pageable) {
+        return orderRepository.findByCustomerId(customerId, pageable)
+                .map(this::toResponse);
     }
 
-    public List<OrderResponse> getOrdersBySeller(Long sellerId) {
-        return orderRepository.findBySellerId(sellerId).stream()
-                .map(this::toResponse).collect(Collectors.toList());
+    public Page<OrderResponse> getOrdersBySeller(Long sellerId, Pageable pageable) {
+        return orderRepository.findBySellerId(sellerId, pageable)
+                .map(this::toResponse);
     }
 
-    public List<OrderResponse> getOrdersByCourier(Long courierId) {
-        return orderRepository.findByCourierId(courierId).stream()
-                .map(this::toResponse).collect(Collectors.toList());
+    public Page<OrderResponse> getOrdersByCourier(Long courierId, Pageable pageable) {
+        return orderRepository.findByCourierId(courierId, pageable)
+                .map(this::toResponse);
     }
 
-    public List<OrderResponse> getOrdersByStatus(OrderStatus status) {
-        return orderRepository.findByStatus(status).stream()
-                .map(this::toResponse).collect(Collectors.toList());
+    public Page<OrderResponse> getOrdersByStatus(OrderStatus status, Pageable pageable) {
+        return orderRepository.findByStatus(status, pageable)
+                .map(this::toResponse);
     }
 
-    public List<OrderResponse> getAllOrders() {
-        return orderRepository.findAll().stream()
-                .map(this::toResponse).collect(Collectors.toList());
+    public Page<OrderResponse> getAllOrders(Pageable pageable) {
+        return orderRepository.findAll(pageable).map(this::toResponse);
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.SERIALIZABLE)
     public void cancelOverdueOrders(int timeoutMinutes) {
+
         LocalDateTime deadline = LocalDateTime.now().minusMinutes(timeoutMinutes);
-        List<Order> overdueOrders = orderRepository
-                .findByStatusAndSellerNotifiedAtBefore(OrderStatus.IN_PROCESSING, deadline);
+        Pageable batch = PageRequest.of(0, 100, Sort.by("id").ascending());
+        while (true){
+            Page<Order> overdueOrders = orderRepository
+                    .findByStatusAndSellerNotifiedAtBefore(OrderStatus.IN_PROCESSING, deadline, batch);
+            if (overdueOrders.isEmpty()) {
+                break;
+            }
+            for (Order order : overdueOrders) {
+                order.setStatus(OrderStatus.CANCELLED);
+                order.setCancelledAt(LocalDateTime.now());
+                order.setCancelReason("Продавец не реагирует в течение " + timeoutMinutes + " минут");
+                orderRepository.save(order);
 
-        for (Order order : overdueOrders) {
-            order.setStatus(OrderStatus.CANCELLED);
-            order.setCancelledAt(LocalDateTime.now());
-            order.setCancelReason("Продавец не реагирует в течение " + timeoutMinutes + " минут");
-            orderRepository.save(order);
+                notificationService.notifyCustomerStatusChanged(order);
+                log.warn("Order #{} auto-cancelled: seller timeout ({} min)", order.getId(), timeoutMinutes);
+            }
 
-            notificationService.notifyCustomerStatusChanged(order);
-            log.warn("Order #{} auto-cancelled: seller timeout ({} min)", order.getId(), timeoutMinutes);
+
         }
+
+
+
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.REPEATABLE_READ)
     public void markDelayedOrders(int timeoutMinutes) {
         LocalDateTime deadline = LocalDateTime.now().minusMinutes(timeoutMinutes);
-        List<Order> delayedOrders = orderRepository
-                .findByStatusAndCourierAssignedAtBefore(OrderStatus.AWAITING_COURIER, deadline);
+        Pageable batch = PageRequest.of(0, 100, Sort.by("id").ascending());
+        while (true){
+            Page<Order> delayedOrders = orderRepository
+                    .findByStatusAndCourierAssignedAtBefore(OrderStatus.AWAITING_COURIER, deadline, batch);
+            if (delayedOrders.isEmpty()) {
+                break;
+            }
 
-        for (Order order : delayedOrders) {
-            order.setStatus(OrderStatus.DELAYED);
-            orderRepository.save(order);
+            for (Order order : delayedOrders) {
+                order.setStatus(OrderStatus.DELAYED);
+                orderRepository.save(order);
 
-            notificationService.notifyCustomerStatusChanged(order);
-            log.warn("Order #{} marked as DELAYED: courier timeout ({} min)", order.getId(), timeoutMinutes);
+                notificationService.notifyCustomerStatusChanged(order);
+                log.warn("Order #{} marked as DELAYED: courier timeout ({} min)", order.getId(), timeoutMinutes);
+            }
+
         }
+
     }
 
     private Order findOrderOrThrow(Long orderId) {

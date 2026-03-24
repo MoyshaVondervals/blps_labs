@@ -4,6 +4,9 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -31,8 +34,9 @@ public class OrderController {
 
     @GetMapping("/customer/{customerId}")
     @Operation(summary = "Получить заказы покупателя")
-    public ResponseEntity<List<OrderResponse>> getOrdersByCustomer(@PathVariable Long customerId) {
-        return ResponseEntity.ok(orderService.getOrdersByCustomer(customerId));
+    public ResponseEntity<Page<OrderResponse>> getOrdersByCustomer(@PathVariable Long customerId,
+                                                                   @PageableDefault Pageable pageable) {
+        return ResponseEntity.ok(orderService.getOrdersByCustomer(customerId, pageable));
     }
 
     @PostMapping("/{orderId}/review")
@@ -61,8 +65,9 @@ public class OrderController {
 
     @GetMapping("/seller/{sellerId}")
     @Operation(summary = "Получить заказы продавца")
-    public ResponseEntity<List<OrderResponse>> getOrdersBySeller(@PathVariable Long sellerId) {
-        return ResponseEntity.ok(orderService.getOrdersBySeller(sellerId));
+    public ResponseEntity<Page<OrderResponse>> getOrdersBySeller(@PathVariable Long sellerId,
+    @PageableDefault Pageable pageable) {
+        return ResponseEntity.ok(orderService.getOrdersBySeller(sellerId, pageable));
     }
 
     @PostMapping("/{orderId}/courier/{courierId}/accept")
@@ -96,8 +101,9 @@ public class OrderController {
 
     @GetMapping("/courier/{courierId}")
     @Operation(summary = "Получить заказы курьера")
-    public ResponseEntity<List<OrderResponse>> getOrdersByCourier(@PathVariable Long courierId) {
-        return ResponseEntity.ok(orderService.getOrdersByCourier(courierId));
+    public ResponseEntity<Page<OrderResponse>> getOrdersByCourier(@PathVariable Long courierId,
+                                                                  @PageableDefault Pageable pageable) {
+        return ResponseEntity.ok(orderService.getOrdersByCourier(courierId, pageable));
     }
 
     @GetMapping("/{orderId}")
@@ -108,13 +114,16 @@ public class OrderController {
 
     @GetMapping
     @Operation(summary = "Получить все заказы")
-    public ResponseEntity<List<OrderResponse>> getAllOrders() {
-        return ResponseEntity.ok(orderService.getAllOrders());
+    public ResponseEntity<Page<OrderResponse>> getAllOrders(
+            @PageableDefault Pageable pageable
+    ) {
+        return ResponseEntity.ok(orderService.getAllOrders(pageable));
     }
 
     @GetMapping("/status/{status}")
     @Operation(summary = "Получить заказы по статусу")
-    public ResponseEntity<List<OrderResponse>> getOrdersByStatus(@PathVariable OrderStatus status) {
-        return ResponseEntity.ok(orderService.getOrdersByStatus(status));
+    public ResponseEntity<Page<OrderResponse>> getOrdersByStatus(@PathVariable OrderStatus status,
+    @PageableDefault Pageable pageable) {
+        return ResponseEntity.ok(orderService.getOrdersByStatus(status, pageable));
     }
 }

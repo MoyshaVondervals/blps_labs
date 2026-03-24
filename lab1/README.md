@@ -19,7 +19,7 @@
 | PUT | `/api/products/{id}` | Обновить товар |
 | DELETE | `/api/products/{id}` | Удалить товар |
 | GET | `/api/products/{id}` | Получить товар по ID |
-| GET | `/api/products/seller/{sellerId}` | Все товары продавца |
+| GET | `/api/products/seller/{sellerId}` | Товары продавца (пагинация: `page`, `size`, `sort`) |
 | GET | `/api/products/seller/{sellerId}/available` | Доступные товары продавца |
 
 
@@ -65,6 +65,9 @@ curl -X POST http://localhost:8080/api/products \
 
 curl -X POST http://localhost:8080/api/products \
   -d '{"sellerId": 1, "name": "Сыр Сухочини", "description": "Итальянский сыр Сухочини, из микробарберса", "price": 1337.00}'
+
+# посмотреть страницу товаров продавца (size=1 для примера)
+curl "http://localhost:8080/api/products/seller/1?page=0&size=1&sort=id,asc"
 
 # посмотреть доступные товары
 curl http://localhost:8080/api/products/seller/1/available

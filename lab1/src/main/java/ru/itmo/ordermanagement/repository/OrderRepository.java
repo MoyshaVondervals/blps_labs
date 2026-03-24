@@ -1,5 +1,7 @@
 package ru.itmo.ordermanagement.repository;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 import ru.itmo.ordermanagement.model.entity.Order;
@@ -10,16 +12,15 @@ import java.util.List;
 
 @Repository
 public interface OrderRepository extends JpaRepository<Order, Long> {
+    Page<Order> findByStatus(OrderStatus status, Pageable pageable);
 
-    List<Order> findByStatus(OrderStatus status);
+    Page<Order> findByCustomerId(Long customerId, Pageable pageable);
 
-    List<Order> findByCustomerId(Long customerId);
+    Page<Order> findBySellerId(Long sellerId, Pageable pageable);
 
-    List<Order> findBySellerId(Long sellerId);
+    Page<Order> findByCourierId(Long courierId, Pageable pageable);
 
-    List<Order> findByCourierId(Long courierId);
+    Page<Order> findByStatusAndSellerNotifiedAtBefore(OrderStatus status, LocalDateTime deadline, Pageable pageable);
 
-    List<Order> findByStatusAndSellerNotifiedAtBefore(OrderStatus status, LocalDateTime deadline);
-
-    List<Order> findByStatusAndCourierAssignedAtBefore(OrderStatus status, LocalDateTime deadline);
+    Page<Order> findByStatusAndCourierAssignedAtBefore(OrderStatus status, LocalDateTime deadline, Pageable pageable);
 }

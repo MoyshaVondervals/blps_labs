@@ -4,6 +4,9 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -24,7 +27,8 @@ public class CourierController {
 
     @PostMapping
     @Operation(summary = "Создать курьера")
-    public ResponseEntity<Courier> create(@Valid @RequestBody CreateCourierRequest request) {
+    public ResponseEntity<Courier> create(
+            @Valid @RequestBody CreateCourierRequest request) {
         Courier courier = Courier.builder()
                 .name(request.getName())
                 .phone(request.getPhone())
@@ -35,13 +39,16 @@ public class CourierController {
 
     @GetMapping
     @Operation(summary = "Получить всех курьеров")
-    public ResponseEntity<List<Courier>> getAll() {
-        return ResponseEntity.ok(courierRepository.findAll());
+    public ResponseEntity<Page<Courier>> getAll(@PageableDefault(sort = "id") Pageable pageable) {
+        return ResponseEntity.ok(courierRepository.findAll(pageable));
     }
 
     @GetMapping("/{id}")
     @Operation(summary = "Получить курьера по ID")
-    public ResponseEntity<Courier> getById(@PathVariable Long id) {
+    public ResponseEntity<Courier> getById(
+            @PathVariable Long id,
+            @PageableDefault(sort = "id") Pageable pageable
+    ) {
         return ResponseEntity.ok(courierRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Courier not found: " + id)));
     }

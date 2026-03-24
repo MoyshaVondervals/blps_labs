@@ -2,7 +2,10 @@ package ru.itmo.ordermanagement.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import ru.itmo.ordermanagement.dto.CreateProductRequest;
 import ru.itmo.ordermanagement.dto.ProductResponse;
@@ -24,7 +27,7 @@ public class ProductService {
     private final ProductRepository productRepository;
     private final SellerRepository sellerRepository;
 
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public ProductResponse createProduct(CreateProductRequest request) {
         Seller seller = sellerRepository.findById(request.getSellerId())
                 .orElseThrow(() -> new ResourceNotFoundException(
@@ -43,7 +46,7 @@ public class ProductService {
         return toResponse(product);
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.REPEATABLE_READ)
     public ProductResponse updateProduct(Long productId, UpdateProductRequest request) {
         Product product = findProductOrThrow(productId);
 
@@ -65,7 +68,7 @@ public class ProductService {
         return toResponse(product);
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.REPEATABLE_READ)
     public void deleteProduct(Long productId) {
         Product product = findProductOrThrow(productId);
         productRepository.delete(product);
@@ -76,16 +79,14 @@ public class ProductService {
         return toResponse(findProductOrThrow(productId));
     }
 
-    public List<ProductResponse> getProductsBySeller(Long sellerId) {
-        return productRepository.findBySellerId(sellerId).stream()
-                .map(this::toResponse)
-                .collect(Collectors.toList());
+    public Page<ProductResponse> getProductsBySeller(Long sellerId, Pageable pageable) {
+        return productRepository.findBySellerId(sellerId, pageable)
+                .map(this::toResponse);
     }
 
-    public List<ProductResponse> getAvailableProductsBySeller(Long sellerId) {
-        return productRepository.findBySellerIdAndAvailableTrue(sellerId).stream()
-                .map(this::toResponse)
-                .collect(Collectors.toList());
+    public Page<ProductResponse> getAvailableProductsBySeller(Long sellerId, Pageable pageable) {
+        return productRepository.findBySellerIdAndAvailableTrue(sellerId, pageable)
+                .map(this::toResponse);
     }
 
     private Product findProductOrThrow(Long productId) {
