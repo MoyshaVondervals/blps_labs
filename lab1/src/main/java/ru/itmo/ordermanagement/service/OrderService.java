@@ -6,7 +6,10 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import ru.itmo.ordermanagement.dto.*;
@@ -15,6 +18,7 @@ import ru.itmo.ordermanagement.exception.ResourceNotFoundException;
 import ru.itmo.ordermanagement.model.entity.*;
 import ru.itmo.ordermanagement.model.enums.OrderStatus;
 import ru.itmo.ordermanagement.repository.*;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -33,78 +37,107 @@ public class OrderService {
     private final NotificationService notificationService;
     private final OrderBatchTransactionService orderBatchTransactionService;
 
-    @Transactional(isolation = Isolation.SERIALIZABLE)
-    public OrderResponse createOrder(CreateOrderRequest request) {
-        Customer customer = customerRepository.findById(request.getCustomerId())
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Customer not found: " + request.getCustomerId()));
+    private final PlatformTransactionManager txManager;
+    private final JdbcTemplate jdbcTemplate;
 
-        Seller seller = sellerRepository.findById(request.getSellerId())
-                .orElseThrow(() -> new ResourceNotFoundException(
-                        "Seller not found: " + request.getSellerId()));
+//    @Transactional(isolation = Isolation.SERIALIZABLE)
+    public OrderResponse createOrder(CreateOrderRequest request){
+        TransactionTemplate tx = new TransactionTemplate(txManager);
+        tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRED);
+        tx.setTimeout(30);
+        tx.setIsolationLevel(TransactionDefinition.ISOLATION_SERIALIZABLE);
+        return tx.execute(status -> {
+            try{
+                Customer customer = customerRepository.findById(request.getCustomerId())
+                        .orElseThrow(() -> new ResourceNotFoundException(
+                                "Customer not found: " + request.getCustomerId()));
 
-        Order order = Order.builder()
-                .customer(customer)
-                .seller(seller)
-                .status(OrderStatus.IN_PROCESSING)
-                .build();
+                Seller seller = sellerRepository.findById(request.getSellerId())
+                        .orElseThrow(() -> new ResourceNotFoundException(
+                                "Seller not found: " + request.getSellerId()));
+                Order order = Order.builder()
+                        .customer(customer)
+                        .seller(seller)
+                        .status(OrderStatus.IN_PROCESSING)
+                        .build();
+                for (OrderItemDto itemDto : request.getItems()) {
+                    Product product = productRepository.findById(itemDto.getProductId())
+                            .orElseThrow(() -> new ResourceNotFoundException(
+                                    "Product not found: " + itemDto.getProductId()));
 
-        for (OrderItemDto itemDto : request.getItems()) {
-            Product product = productRepository.findById(itemDto.getProductId())
-                    .orElseThrow(() -> new ResourceNotFoundException(
-                            "Product not found: " + itemDto.getProductId()));
+                    if (!product.getSeller().getId().equals(seller.getId())) {
+                        throw new InvalidOrderStateException(
+                                "Product #" + product.getId() + " does not belong to seller #" + seller.getId());
+                    }
+                    if (!product.getAvailable()) {
+                        throw new InvalidOrderStateException(
+                                "Product '" + product.getName() + "' is not available");
+                    }
 
-            if (!product.getSeller().getId().equals(seller.getId())) {
-                throw new InvalidOrderStateException(
-                        "Product #" + product.getId() + " does not belong to seller #" + seller.getId());
+                    OrderItem item = OrderItem.builder()
+                            .product(product)
+                            .productName(product.getName())
+                            .quantity(itemDto.getQuantity())
+                            .price(product.getPrice())
+                            .build();
+                    order.addItem(item);
+                }
+                order.recalculateTotal();
+                order.setSellerNotifiedAt(LocalDateTime.now());
+
+                order = orderRepository.save(order);
+
+                notificationService.notifySellerNewOrder(order);
+                notificationService.notifyCustomerStatusChanged(order);
+
+                log.info("Order #{} created, status: IN_PROCESSING", order.getId());
+                return toResponse(order);
+
+            }catch (Exception e){
+                status.setRollbackOnly();
+                throw e;
             }
-            if (!product.getAvailable()) {
-                throw new InvalidOrderStateException(
-                        "Product '" + product.getName() + "' is not available");
-            }
-
-            OrderItem item = OrderItem.builder()
-                    .product(product)
-                    .productName(product.getName())
-                    .quantity(itemDto.getQuantity())
-                    .price(product.getPrice())
-                    .build();
-            order.addItem(item);
-        }
-        order.recalculateTotal();
-        order.setSellerNotifiedAt(LocalDateTime.now());
-
-        order = orderRepository.save(order);
-
-        notificationService.notifySellerNewOrder(order);
-        notificationService.notifyCustomerStatusChanged(order);
-
-        log.info("Order #{} created, status: IN_PROCESSING", order.getId());
-        return toResponse(order);
+        });
     }
 
-    @Transactional(isolation = Isolation.REPEATABLE_READ)
+
+
+//    @Transactional(isolation = Isolation.REPEATABLE_READ)
     public OrderResponse reviewOrder(Long orderId, ReviewOrderRequest request) {
-        Order order = findOrderOrThrow(orderId);
-        assertStatus(order, OrderStatus.IN_PROCESSING);
+        TransactionTemplate tx = new TransactionTemplate(txManager);
+        tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRED);
+        tx.setTimeout(30);
+        tx.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
+        return tx.execute(status -> {
+            try {
+                Order order = findOrderOrThrow(orderId);
+                assertStatus(order, OrderStatus.IN_PROCESSING);
 
-        if (request.isCanFulfill()) {
-            order.setStatus(OrderStatus.COOKING);
-            order = orderRepository.save(order);
-            notificationService.notifyCustomerStatusChanged(order);
-            log.info("Order #{} accepted by seller, status: COOKING", orderId);
-        } else {
-            order.setStatus(OrderStatus.CANCELLED);
-            order.setCancelledAt(LocalDateTime.now());
-            order.setCancelReason(request.getCancelReason() != null
-                    ? request.getCancelReason()
-                    : "Продавец не может выполнить заказ");
-            order = orderRepository.save(order);
-            notificationService.notifyCustomerStatusChanged(order);
-            log.info("Order #{} cancelled by seller: {}", orderId, order.getCancelReason());
-        }
+                if (request.isCanFulfill()) {
+                    order.setStatus(OrderStatus.COOKING);
+                    order = orderRepository.save(order);
+                    notificationService.notifyCustomerStatusChanged(order);
+                    log.info("Order #{} accepted by seller, status: COOKING", orderId);
+                } else {
+                    order.setStatus(OrderStatus.CANCELLED);
+                    order.setCancelledAt(LocalDateTime.now());
+                    order.setCancelReason(request.getCancelReason() != null
+                            ? request.getCancelReason()
+                            : "Продавец не может выполнить заказ");
+                    order = orderRepository.save(order);
+                    notificationService.notifyCustomerStatusChanged(order);
+                    log.info("Order #{} cancelled by seller: {}", orderId, order.getCancelReason());
+                }
 
-        return toResponse(order);
+                return toResponse(order);
+
+            }
+            catch (Exception e){
+                status.setRollbackOnly();
+                throw e;
+            }
+        });
+
     }
 
     @Transactional(isolation = Isolation.REPEATABLE_READ)
@@ -136,20 +169,34 @@ public class OrderService {
         return toResponse(orderRepository.findById(orderId).orElseThrow());
     }
 
-    @Transactional(isolation = Isolation.SERIALIZABLE)
+//    @Transactional(isolation = Isolation.SERIALIZABLE)
     public void assignCourier(Order order, Courier courier) {
-        courier.setAvailable(false);
-        courierRepository.save(courier);
+        TransactionTemplate tx = new TransactionTemplate(txManager);
+        tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_MANDATORY); //тут мандатори кароч потому что вызываем
+        tx.setTimeout(30);
+        tx.setIsolationLevel(TransactionDefinition.ISOLATION_SERIALIZABLE);
+        tx.execute(status -> {
+            try{
+                courier.setAvailable(false);
+                courierRepository.save(courier);
 
-        order.setCourier(courier);
-        order.setStatus(OrderStatus.AWAITING_COURIER);
-        order.setCourierAssignedAt(LocalDateTime.now());
-        order.setCourierNotifiedAt(LocalDateTime.now());
-        orderRepository.save(order);
+                order.setCourier(courier);
+                order.setStatus(OrderStatus.AWAITING_COURIER);
+                order.setCourierAssignedAt(LocalDateTime.now());
+                order.setCourierNotifiedAt(LocalDateTime.now());
+                orderRepository.save(order);
 
-        notificationService.notifyCourierNewDelivery(order);
-        log.info("Order #{}: courier #{} assigned, status: AWAITING_COURIER",
-                order.getId(), courier.getId());
+                notificationService.notifyCourierNewDelivery(order);
+                log.info("Order #{}: courier #{} assigned, status: AWAITING_COURIER",
+                        order.getId(), courier.getId());
+            }
+            catch (Exception e){
+                status.setRollbackOnly();
+                throw e;
+            }
+            return null;
+        });
+
     }
 
     @Transactional(isolation = Isolation.REPEATABLE_READ)
@@ -168,52 +215,80 @@ public class OrderService {
         return toResponse(order);
     }
 
-    @Transactional(isolation = Isolation.REPEATABLE_READ)
+//    @Transactional(isolation = Isolation.REPEATABLE_READ)
     public OrderResponse courierArrived(Long orderId, Long courierId) {
-        Order order = findOrderOrThrow(orderId);
+        TransactionTemplate tx = new TransactionTemplate(txManager);
+        tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRED);
+        tx.setTimeout(30);
+        tx.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
+        return tx.execute(status -> {
+            try {
+                Order order = findOrderOrThrow(orderId);
 
-        if (order.getStatus() != OrderStatus.AWAITING_COURIER
-                && order.getStatus() != OrderStatus.DELAYED) {
-            throw new InvalidOrderStateException(
-                    "Order #" + orderId + " is not in AWAITING_COURIER or DELAYED status");
-        }
+                if (order.getStatus() != OrderStatus.AWAITING_COURIER
+                        && order.getStatus() != OrderStatus.DELAYED) {
+                    throw new InvalidOrderStateException(
+                            "Order #" + orderId + " is not in AWAITING_COURIER or DELAYED status");
+                }
 
-        if (order.getCourier() == null || !order.getCourier().getId().equals(courierId)) {
-            throw new InvalidOrderStateException(
-                    "Courier #" + courierId + " is not assigned to order #" + orderId);
-        }
+                if (order.getCourier() == null || !order.getCourier().getId().equals(courierId)) {
+                    throw new InvalidOrderStateException(
+                            "Courier #" + courierId + " is not assigned to order #" + orderId);
+                }
 
-        order.setCourierArrivedAt(LocalDateTime.now());
-        order.setStatus(OrderStatus.IN_DELIVERY);
-        order = orderRepository.save(order);
+                order.setCourierArrivedAt(LocalDateTime.now());
+                order.setStatus(OrderStatus.IN_DELIVERY);
+                order = orderRepository.save(order);
 
-        notificationService.notifyCustomerStatusChanged(order);
-        log.info("Order #{}: courier arrived, status: IN_DELIVERY", orderId);
-        return toResponse(order);
+                notificationService.notifyCustomerStatusChanged(order);
+                log.info("Order #{}: courier arrived, status: IN_DELIVERY", orderId);
+                return toResponse(order);
+
+            }
+            catch (Exception e){
+                status.setRollbackOnly();
+                throw e;
+            }
+        });
+
     }
 
-    @Transactional(isolation = Isolation.REPEATABLE_READ)
+//    @Transactional(isolation = Isolation.REPEATABLE_READ)
     public OrderResponse deliverOrder(Long orderId, Long courierId) {
-        Order order = findOrderOrThrow(orderId);
-        assertStatus(order, OrderStatus.IN_DELIVERY);
+        TransactionTemplate tx = new TransactionTemplate(txManager);
+        tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRED);
+        tx.setTimeout(30);
+        tx.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
+        return tx.execute(status -> {
+            try{
+                Order order = findOrderOrThrow(orderId);
+                assertStatus(order, OrderStatus.IN_DELIVERY);
 
-        if (order.getCourier() == null || !order.getCourier().getId().equals(courierId)) {
-            throw new InvalidOrderStateException(
-                    "Courier #" + courierId + " is not assigned to order #" + orderId);
-        }
+                if (order.getCourier() == null || !order.getCourier().getId().equals(courierId)) {
+                    throw new InvalidOrderStateException(
+                            "Courier #" + courierId + " is not assigned to order #" + orderId);
+                }
 
-        order.setStatus(OrderStatus.DELIVERED);
-        order.setDeliveredAt(LocalDateTime.now());
-        order = orderRepository.save(order);
+                order.setStatus(OrderStatus.DELIVERED);
+                order.setDeliveredAt(LocalDateTime.now());
+                order = orderRepository.save(order);
 
-        Courier courier = order.getCourier();
-        courier.setAvailable(true);
-        courierRepository.save(courier);
+                Courier courier = order.getCourier();
+                courier.setAvailable(true);
+                courierRepository.save(courier);
 
-        notificationService.notifyCustomerStatusChanged(order);
-        notificationService.notifySellerOrderDelivered(order);
-        log.info("Order #{}: delivered by courier #{}, status: DELIVERED", orderId, courierId);
-        return toResponse(order);
+                notificationService.notifyCustomerStatusChanged(order);
+                notificationService.notifySellerOrderDelivered(order);
+                log.info("Order #{}: delivered by courier #{}, status: DELIVERED", orderId, courierId);
+                return toResponse(order);
+
+            }
+            catch (Exception e){
+                status.setRollbackOnly();
+                throw e;
+            }
+        });
+
     }
 
     public OrderResponse getOrder(Long orderId) {
