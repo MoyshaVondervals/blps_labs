@@ -11,6 +11,19 @@ spring:
     username: postgres
     password: postgres
     driver-class-name: org.postgresql.Driver
+  app:
+    xa:
+      unique-resource-name: orderDb
+      server-name: localhost
+      port-number: 5432
+      database-name: order_management
+      user: postgres
+      password: postgres
+      min-pool-size: 2
+      max-pool-size: 10
+      borrow-connection-timeout: 30
+
+
 
   jpa:
     hibernate:

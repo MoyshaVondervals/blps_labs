@@ -14,8 +14,6 @@ import ru.itmo.ordermanagement.dto.*;
 import ru.itmo.ordermanagement.model.enums.OrderStatus;
 import ru.itmo.ordermanagement.service.OrderService;
 
-import java.util.List;
-
 @RestController
 @RequestMapping("/api/orders")
 @RequiredArgsConstructor
