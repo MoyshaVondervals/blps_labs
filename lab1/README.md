@@ -1,3 +1,23 @@
+## Docker запуск (приложение + PostgreSQL)
+
+```zsh
+cd /Users/moyshavondervals/IdeaProjects/blps_labs/lab1
+docker compose up -d --build
+```
+
+Проверка API (Basic Auth из `users.xml`):
+
+```zsh
+curl -u moysha:2281337 http://localhost:8080/api/customers
+```
+
+Остановка:
+
+```zsh
+cd /Users/moyshavondervals/IdeaProjects/blps_labs/lab1
+docker compose down
+```
+
 
 
 | POST | `/api/customers` | Создать заказчика |

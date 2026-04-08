@@ -7,18 +7,18 @@ spring:
       request-timeout: 1800000  # 30 минут для SSE-соединений
 
   datasource:
-    url: jdbc:postgresql://localhost:5432/order_management
-    username: postgres
-    password: postgres
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/order_management}
+    username: ${SPRING_DATASOURCE_USERNAME:postgres}
+    password: ${SPRING_DATASOURCE_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
   app:
     xa:
       unique-resource-name: orderDb
-      server-name: localhost
-      port-number: 5432
-      database-name: order_management
-      user: postgres
-      password: postgres
+      server-name: ${DB_HOST:localhost}
+      port-number: ${DB_PORT:5432}
+      database-name: ${DB_NAME:order_management}
+      user: ${DB_USER:postgres}
+      password: ${DB_PASSWORD:postgres}
       min-pool-size: 2
       max-pool-size: 10
       borrow-connection-timeout: 30

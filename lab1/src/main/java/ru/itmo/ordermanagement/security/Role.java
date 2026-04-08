@@ -20,11 +20,13 @@ public enum Role {
             Privilege.VIEW_ALL_ORDERS,
             Privilege.CHANGE_DELIVERY_STATUS,
             Privilege.CHANGE_ORDER_STATUS,
-            Privilege.PROCESS_ORDER
+            Privilege.PROCESS_ORDER,
+            Privilege.SEARCH_COURIER
     )),
     COURIER(Set.of(
             Privilege.VIEW_DELIVERY_ORDERS,
-            Privilege.DELIVER_ORDER
+            Privilege.DELIVER_ORDER,
+            Privilege.GET_ORDER_TO_DELIVERY
     )),
     ADMIN(Set.of(CUSTOMER.getPrivileges(), SELLER.getPrivileges(), COURIER.getPrivileges())
             .stream().flatMap(Set::stream).collect(Collectors.toUnmodifiableSet()));

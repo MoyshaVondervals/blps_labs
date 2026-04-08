@@ -2,4 +2,13 @@
     <user username="moysha" password="2281337">
         <role>ROLE_ADMIN</role>
     </user>
+    <user username="seller" password="2281337">
+        <role>ROLE_SELLER</role>
+    </user>
+    <user username="customer" password="2281337">
+        <role>ROLE_CUSTOMER</role>
+    </user>
+    <user username="courier" password="2281337">
+        <role>ROLE_COURIER</role>
+    </user>
 </users>

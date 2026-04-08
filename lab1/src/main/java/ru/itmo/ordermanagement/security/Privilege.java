@@ -17,5 +17,7 @@ public final class Privilege {
     public static final String ACCEPT_DELIVERY = "ACCEPT_DELIVERY";
     public static final String CHANGE_ORDER_STATUS = "CHANGE_ORDER_STATUS";
     public static final String CANCEL_ORDER = "CANCEL_ORDER";
+    public static final String SEARCH_COURIER = "SEARCH_COURIER";
+    public static final String GET_ORDER_TO_DELIVERY = "GET_ORDER_TO_DELIVERY";
 
 }
