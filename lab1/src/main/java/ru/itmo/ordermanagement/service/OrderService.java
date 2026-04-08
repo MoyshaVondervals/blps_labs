@@ -6,23 +6,25 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
-import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import ru.itmo.ordermanagement.dto.*;
 import ru.itmo.ordermanagement.exception.InvalidOrderStateException;
 import ru.itmo.ordermanagement.exception.ResourceNotFoundException;
 import ru.itmo.ordermanagement.model.entity.*;
 import ru.itmo.ordermanagement.model.enums.OrderStatus;
 import ru.itmo.ordermanagement.repository.*;
-import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
+
+import static ru.itmo.ordermanagement.security.Privilege.*;
 
 @Service
 @RequiredArgsConstructor
@@ -38,16 +40,16 @@ public class OrderService {
     private final OrderBatchTransactionService orderBatchTransactionService;
 
     private final PlatformTransactionManager txManager;
-    private final JdbcTemplate jdbcTemplate;
 
-//    @Transactional(isolation = Isolation.SERIALIZABLE)
-    public OrderResponse createOrder(CreateOrderRequest request){
+    //    @Transactional(isolation = Isolation.SERIALIZABLE)
+    @PreAuthorize("hasAuthority(" + CREATE_ORDER + ")")
+    public OrderResponse createOrder(CreateOrderRequest request) {
         TransactionTemplate tx = new TransactionTemplate(txManager);
         tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRED);
         tx.setTimeout(30);
         tx.setIsolationLevel(TransactionDefinition.ISOLATION_SERIALIZABLE);
         return tx.execute(status -> {
-            try{
+            try {
                 Customer customer = customerRepository.findById(request.getCustomerId())
                         .orElseThrow(() -> new ResourceNotFoundException(
                                 "Customer not found: " + request.getCustomerId()));
@@ -93,7 +95,7 @@ public class OrderService {
                 log.info("Order #{} created, status: IN_PROCESSING", order.getId());
                 return toResponse(order);
 
-            }catch (Exception e){
+            } catch (Exception e) {
                 status.setRollbackOnly();
                 throw e;
             }
@@ -101,8 +103,8 @@ public class OrderService {
     }
 
 
-
-//    @Transactional(isolation = Isolation.REPEATABLE_READ)
+    //    @Transactional(isolation = Isolation.REPEATABLE_READ)
+    @PreAuthorize("hasAuthority('" + CHANGE_ORDER_STATUS + ", " + CANCEL_ORDER + "')")
     public OrderResponse reviewOrder(Long orderId, ReviewOrderRequest request) {
         TransactionTemplate tx = new TransactionTemplate(txManager);
         tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRED);
@@ -131,8 +133,7 @@ public class OrderService {
 
                 return toResponse(order);
 
-            }
-            catch (Exception e){
+            } catch (Exception e) {
                 status.setRollbackOnly();
                 throw e;
             }
@@ -163,20 +164,20 @@ public class OrderService {
 
         final Order savedOrder = order;
         courierRepository.findFirstByAvailableTrue().ifPresent(courier ->
-            assignCourier(savedOrder, courier)
+                assignCourier(savedOrder, courier)
         );
 
         return toResponse(orderRepository.findById(orderId).orElseThrow());
     }
 
-//    @Transactional(isolation = Isolation.SERIALIZABLE)
+    //    @Transactional(isolation = Isolation.SERIALIZABLE)
     public void assignCourier(Order order, Courier courier) {
         TransactionTemplate tx = new TransactionTemplate(txManager);
         tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_MANDATORY); //тут мандатори кароч потому что вызываем
         tx.setTimeout(30);
         tx.setIsolationLevel(TransactionDefinition.ISOLATION_SERIALIZABLE);
         tx.execute(status -> {
-            try{
+            try {
                 courier.setAvailable(false);
                 courierRepository.save(courier);
 
@@ -189,8 +190,7 @@ public class OrderService {
                 notificationService.notifyCourierNewDelivery(order);
                 log.info("Order #{}: courier #{} assigned, status: AWAITING_COURIER",
                         order.getId(), courier.getId());
-            }
-            catch (Exception e){
+            } catch (Exception e) {
                 status.setRollbackOnly();
                 throw e;
             }
@@ -200,6 +200,7 @@ public class OrderService {
     }
 
     @Transactional(isolation = Isolation.REPEATABLE_READ)
+    @PreAuthorize("hasAuthority(" + ACCEPT_DELIVERY + ")")
     public OrderResponse courierAcceptDelivery(Long orderId, Long courierId) {
         Order order = findOrderOrThrow(orderId);
         assertStatus(order, OrderStatus.AWAITING_COURIER);
@@ -215,7 +216,7 @@ public class OrderService {
         return toResponse(order);
     }
 
-//    @Transactional(isolation = Isolation.REPEATABLE_READ)
+    //    @Transactional(isolation = Isolation.REPEATABLE_READ)
     public OrderResponse courierArrived(Long orderId, Long courierId) {
         TransactionTemplate tx = new TransactionTemplate(txManager);
         tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRED);
@@ -244,8 +245,7 @@ public class OrderService {
                 log.info("Order #{}: courier arrived, status: IN_DELIVERY", orderId);
                 return toResponse(order);
 
-            }
-            catch (Exception e){
+            } catch (Exception e) {
                 status.setRollbackOnly();
                 throw e;
             }
@@ -253,14 +253,15 @@ public class OrderService {
 
     }
 
-//    @Transactional(isolation = Isolation.REPEATABLE_READ)
+    //    @Transactional(isolation = Isolation.REPEATABLE_READ)
+    @PreAuthorize("hasAuthority(" + DELIVER_ORDER + ")")
     public OrderResponse deliverOrder(Long orderId, Long courierId) {
         TransactionTemplate tx = new TransactionTemplate(txManager);
         tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRED);
         tx.setTimeout(30);
         tx.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
         return tx.execute(status -> {
-            try{
+            try {
                 Order order = findOrderOrThrow(orderId);
                 assertStatus(order, OrderStatus.IN_DELIVERY);
 
@@ -282,8 +283,7 @@ public class OrderService {
                 log.info("Order #{}: delivered by courier #{}, status: DELIVERED", orderId, courierId);
                 return toResponse(order);
 
-            }
-            catch (Exception e){
+            } catch (Exception e) {
                 status.setRollbackOnly();
                 throw e;
             }
@@ -295,26 +295,31 @@ public class OrderService {
         return toResponse(findOrderOrThrow(orderId));
     }
 
+    @PreAuthorize("hasAuthority('" + VIEW_OWN_ORDERS + "')")
     public Page<OrderResponse> getOrdersByCustomer(Long customerId, Pageable pageable) {
         return orderRepository.findByCustomerId(customerId, pageable)
                 .map(this::toResponse);
     }
 
+    @PreAuthorize("hasAuthority(" + VIEW_ALL_ORDERS + ")")
     public Page<OrderResponse> getOrdersBySeller(Long sellerId, Pageable pageable) {
         return orderRepository.findBySellerId(sellerId, pageable)
                 .map(this::toResponse);
     }
 
+    @PreAuthorize("hasAuthority(" + VIEW_DELIVERY_ORDERS + ")")
     public Page<OrderResponse> getOrdersByCourier(Long courierId, Pageable pageable) {
         return orderRepository.findByCourierId(courierId, pageable)
                 .map(this::toResponse);
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     public Page<OrderResponse> getOrdersByStatus(OrderStatus status, Pageable pageable) {
         return orderRepository.findByStatus(status, pageable)
                 .map(this::toResponse);
     }
 
+    @PreAuthorize("hasRole('ADMIN')")
     public Page<OrderResponse> getAllOrders(Pageable pageable) {
         return orderRepository.findAll(pageable).map(this::toResponse);
     }
@@ -323,7 +328,7 @@ public class OrderService {
 
         LocalDateTime deadline = LocalDateTime.now().minusMinutes(timeoutMinutes);
         Pageable batch = PageRequest.of(0, 100, Sort.by("id").ascending());
-        while (true){
+        while (true) {
             Page<Order> overdueOrders = orderRepository
                     .findByStatusAndSellerNotifiedAtBefore(OrderStatus.IN_PROCESSING, deadline, batch);
             if (overdueOrders.isEmpty()) {
@@ -340,7 +345,7 @@ public class OrderService {
     public void markDelayedOrders(int timeoutMinutes) {
         LocalDateTime deadline = LocalDateTime.now().minusMinutes(timeoutMinutes);
         Pageable batch = PageRequest.of(0, 100, Sort.by("id").ascending());
-        while (true){
+        while (true) {
             Page<Order> delayedOrders = orderRepository
                     .findByStatusAndCourierAssignedAtBefore(OrderStatus.AWAITING_COURIER, deadline, batch);
             if (delayedOrders.isEmpty()) {
@@ -354,6 +359,7 @@ public class OrderService {
         }
 
     }
+
 
     private Order findOrderOrThrow(Long orderId) {
         return orderRepository.findById(orderId)

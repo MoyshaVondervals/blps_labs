@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,8 +17,7 @@ import ru.itmo.ordermanagement.model.entity.Seller;
 import ru.itmo.ordermanagement.repository.ProductRepository;
 import ru.itmo.ordermanagement.repository.SellerRepository;
 
-import java.util.List;
-import java.util.stream.Collectors;
+import static ru.itmo.ordermanagement.security.Privilege.*;
 
 @Service
 @RequiredArgsConstructor
@@ -28,6 +28,7 @@ public class ProductService {
     private final SellerRepository sellerRepository;
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
+    @PreAuthorize("hasAuthority(" + CREATE_PRODUCT + ")")
     public ProductResponse createProduct(CreateProductRequest request) {
         Seller seller = sellerRepository.findById(request.getSellerId())
                 .orElseThrow(() -> new ResourceNotFoundException(
@@ -47,6 +48,7 @@ public class ProductService {
     }
 
     @Transactional(isolation = Isolation.REPEATABLE_READ)
+    @PreAuthorize("hasAuthority(" + EDIT_PRODUCT + ")")
     public ProductResponse updateProduct(Long productId, UpdateProductRequest request) {
         Product product = findProductOrThrow(productId);
 
@@ -69,11 +71,13 @@ public class ProductService {
     }
 
     @Transactional(isolation = Isolation.REPEATABLE_READ)
+    @PreAuthorize("hasAuthority(" + DELETE_PRODUCT + ")")
     public void deleteProduct(Long productId) {
         Product product = findProductOrThrow(productId);
         productRepository.delete(product);
         log.info("Product #{} deleted", productId);
     }
+
 
     public ProductResponse getProduct(Long productId) {
         return toResponse(findProductOrThrow(productId));
