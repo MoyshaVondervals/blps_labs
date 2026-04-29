@@ -1,10 +1,6 @@
 spring:
   application:
-    name: order-management
-
-  mvc:
-    async:
-      request-timeout: 1800000  # 30 минут для SSE-соединений
+    name: notificationService
 
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/order_management}
@@ -40,15 +36,34 @@ spring:
 
   kafka:
     bootstrap-servers: localhost:29092
-    producer:
-      key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    consumer:
+      group-id: "notification-1"
+      auto-offset-reset: earliest
+      key-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
       properties:
-        acks: 1
-        spring.json.add.type.headers: false
+        spring:
+          deserializer:
+            key:
+              delegate:
+                class: org.apache.kafka.common.serialization.StringDeserializer
+            value:
+              delegate:
+                class: org.springframework.kafka.support.serializer.JsonDeserializer
+          json:
+            trusted:
+              packages: org.moysha.notificationservice.dto
+            value:
+              default:
+                type: org.moysha.notificationservice.dto.NotificationEvent
+            use:
+              type:
+                headers: false
 
 server:
-  port: 8080
+  port: 8081
+
+
 
 springdoc:
   api-docs:
@@ -59,7 +74,6 @@ springdoc:
 app:
   seller-reaction-timeout-minutes: 10
   courier-arrival-timeout-minutes: 30
-  notification-service:
-    base-url: ${NOTIFICATION_SERVICE_URL:http://localhost:8081}
-topic:
-  send-notification: send-notification
+
+  topic:
+    send-notification: send-notification

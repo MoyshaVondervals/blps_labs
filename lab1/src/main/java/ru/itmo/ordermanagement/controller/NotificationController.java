@@ -8,11 +8,9 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-import ru.itmo.ordermanagement.dto.NotificationResponse;
+import ru.itmo.ordermanagement.dto.NotificationEvent;
 import ru.itmo.ordermanagement.model.enums.RecipientType;
 import ru.itmo.ordermanagement.service.NotificationService;
-
-import java.util.List;
 
 @RestController
 @RequestMapping("/api/notifications")
@@ -25,7 +23,7 @@ public class NotificationController {
     @GetMapping("/{recipientType}/{recipientId}")
     @Operation(summary = "Получить все уведомления получателя",
             description = "recipientType: CUSTOMER, SELLER, COURIER")
-    public ResponseEntity<Page<NotificationResponse>> getNotifications(
+    public ResponseEntity<Page<NotificationEvent>> getNotifications(
             @PathVariable RecipientType recipientType,
             @PathVariable Long recipientId,
             @PageableDefault Pageable pageable
@@ -35,7 +33,7 @@ public class NotificationController {
 
     @GetMapping("/{recipientType}/{recipientId}/unread")
     @Operation(summary = "Получить непрочитанные уведомления получателя")
-    public ResponseEntity<Page<NotificationResponse>> getUnreadNotifications(
+    public ResponseEntity<Page<NotificationEvent>> getUnreadNotifications(
             @PathVariable RecipientType recipientType,
             @PathVariable Long recipientId,
             @PageableDefault Pageable pageable) {

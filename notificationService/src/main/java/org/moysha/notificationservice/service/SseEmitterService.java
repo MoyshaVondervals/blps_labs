@@ -1,10 +1,12 @@
-package ru.itmo.ordermanagement.service;
+package org.moysha.notificationservice.service;
 
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.moysha.notificationservice.dto.NotificationEvent;
+import org.moysha.notificationservice.model.enums.RecipientType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
-import ru.itmo.ordermanagement.dto.NotificationEvent;
-import ru.itmo.ordermanagement.model.enums.RecipientType;
+
 
 import java.io.IOException;
 import java.util.List;
@@ -14,6 +16,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 @Service
 @Slf4j
+@RequiredArgsConstructor
 public class SseEmitterService {
 
     private static final long SSE_TIMEOUT = 30 * 60 * 1000L;
@@ -36,11 +39,11 @@ public class SseEmitterService {
                     .name("connected")
                     .data("SSE подключение установлено для " + recipientType + " #" + recipientId));
         } catch (IOException e) {
-            log.warn("Не удалось отправить начальное SSE-событие для {}", key);
+            System.out.println("Не удалось отправить начальное SSE-событие для "+ key);
             removeEmitter(key, emitter);
         }
 
-        log.info("SSE подписка создана: {}", key);
+        System.out.println("SSE подписка создана: "+ key);
         return emitter;
     }
 
@@ -50,7 +53,7 @@ public class SseEmitterService {
         List<SseEmitter> recipientEmitters = emitters.get(key);
 
         if (recipientEmitters == null || recipientEmitters.isEmpty()) {
-            log.debug("Нет активных SSE-подписчиков для {}", key);
+            System.err.println("Нет активных SSE-подписчиков для "+ key);
             return;
         }
 
@@ -62,7 +65,7 @@ public class SseEmitterService {
                         .name("notification")
                         .data(notification));
             } catch (IOException e) {
-                log.debug("SSE-соединение потеряно для {}", key);
+                System.err.println("SSE-соединение потеряно для "+ key);
                 deadEmitters.add(emitter);
             }
         }
@@ -79,7 +82,7 @@ public class SseEmitterService {
             if (recipientEmitters.isEmpty()) {
                 emitters.remove(key);
             }
-            log.debug("SSE-эмиттер удалён для {}", key);
+            System.out.println("SSE-эмиттер удалён для "+ key);
         }
     }
 

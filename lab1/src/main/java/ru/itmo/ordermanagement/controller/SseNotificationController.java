@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import ru.itmo.ordermanagement.model.enums.RecipientType;
-import ru.itmo.ordermanagement.service.SseEmitterService;
+import ru.itmo.ordermanagement.service.NotificationSseProxyService;
 
 @RestController
 @RequestMapping("/api/sse")
@@ -16,7 +16,7 @@ import ru.itmo.ordermanagement.service.SseEmitterService;
 @Tag(name = "SSE Notifications", description = "Server-Sent Events для получения уведомлений в реальном времени")
 public class SseNotificationController {
 
-    private final SseEmitterService sseEmitterService;
+    private final NotificationSseProxyService notificationSseProxyService;
 
     @GetMapping(value = "/notifications/{recipientType}/{recipientId}", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     @Operation(summary = "Подписаться на SSE-уведомления",
@@ -28,7 +28,6 @@ public class SseNotificationController {
     public SseEmitter subscribe(
             @PathVariable RecipientType recipientType,
             @PathVariable Long recipientId) {
-        return sseEmitterService.subscribe(recipientType, recipientId);
+        return notificationSseProxyService.subscribe(recipientType, recipientId);
     }
 }
-

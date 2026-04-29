@@ -127,3 +127,17 @@ curl -N http://localhost:8080/api/sse/notifications/SELLER/1
 # Курьер
 curl -N http://localhost:8080/api/sse/notifications/COURIER/1
 ```
+
+## Kafka: подписка на топик уведомлений
+
+Если нужно отладить поток напрямую, можно подписаться на Kafka-топик.
+
+```zsh
+kafka-console-consumer --bootstrap-server localhost:29092 --topic send-notification --from-beginning
+```
+
+Если используешь контейнер Kafka, выполняй команду внутри контейнера:
+
+```zsh
+docker exec -it kafka kafka-console-consumer --bootstrap-server localhost:9092 --topic send-notification --from-beginning
+```
