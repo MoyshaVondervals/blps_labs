@@ -3,8 +3,11 @@ package org.moysha.notificationservice.service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.moysha.notificationservice.dto.NotificationEvent;
+import org.moysha.notificationservice.model.entity.Notification;
 import org.moysha.notificationservice.model.enums.RecipientType;
+import org.moysha.notificationservice.repository.NotificationRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 
@@ -22,6 +25,7 @@ public class SseEmitterService {
     private static final long SSE_TIMEOUT = 30 * 60 * 1000L;
 
     private final Map<String, List<SseEmitter>> emitters = new ConcurrentHashMap<>();
+    private final NotificationRepository notificationRepository;
 
     public SseEmitter subscribe(RecipientType recipientType, Long recipientId) {
         String key = buildKey(recipientType, recipientId);
@@ -46,9 +50,11 @@ public class SseEmitterService {
         System.out.println("SSE подписка создана: "+ key);
         return emitter;
     }
-
+    @Transactional
     public void sendNotification(RecipientType recipientType, Long recipientId,
-                                 NotificationEvent notification) {
+                                 NotificationEvent notificationEvent) {
+        Notification notification = saveNotification(mapNotification(notificationEvent));
+
         String key = buildKey(recipientType, recipientId);
         List<SseEmitter> recipientEmitters = emitters.get(key);
 
@@ -73,7 +79,25 @@ public class SseEmitterService {
         for (SseEmitter dead : deadEmitters) {
             removeEmitter(key, dead);
         }
+
     }
+
+
+    private Notification saveNotification(Notification notification) {
+        return notificationRepository.save(notification);
+    }
+
+    private Notification mapNotification(NotificationEvent notificationEvent) {
+        Notification notification = Notification.builder()
+                .recipientType(notificationEvent.recipientType())
+                .recipientId(notificationEvent.recipientId())
+                .orderId(notificationEvent.orderId())
+                .message(notificationEvent.message())
+                .isRead(notificationEvent.isRead())
+                .build();
+        return notification;
+    }
+
 
     private void removeEmitter(String key, SseEmitter emitter) {
         List<SseEmitter> recipientEmitters = emitters.get(key);
