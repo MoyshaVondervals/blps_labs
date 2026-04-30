@@ -19,6 +19,7 @@ import ru.itmo.ordermanagement.exception.ResourceNotFoundException;
 import ru.itmo.ordermanagement.model.entity.*;
 import ru.itmo.ordermanagement.model.enums.OrderStatus;
 import ru.itmo.ordermanagement.repository.*;
+import ru.itmo.ordermanagement.service.kafka.CreateOrderPublisher;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -38,10 +39,11 @@ public class OrderService {
     private final ProductRepository productRepository;
     private final NotificationService notificationService;
     private final OrderBatchTransactionService orderBatchTransactionService;
+    private final CreateOrderPublisher createOrderPublisher;
 
     private final PlatformTransactionManager txManager;
 
-    //    @Transactional(isolation = Isolation.SERIALIZABLE)
+    /*
     @PreAuthorize("hasAuthority('" + CREATE_ORDER + "')")
     public OrderResponse createOrder(CreateOrderRequest request) {
         TransactionTemplate tx = new TransactionTemplate(txManager);
@@ -100,6 +102,13 @@ public class OrderService {
                 throw e;
             }
         });
+    }
+    */
+
+    @PreAuthorize("hasAuthority('" + CREATE_ORDER + "')")
+    public void createOrder(CreateOrderRequest request) {
+        createOrderPublisher.publish(request);
+        log.info("Create order request published for customer #{}", request.getCustomerId());
     }
 
 

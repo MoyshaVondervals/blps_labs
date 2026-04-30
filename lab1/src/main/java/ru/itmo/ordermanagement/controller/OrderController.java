@@ -24,10 +24,10 @@ public class OrderController {
 
     @PostMapping
     @Operation(summary = "Создать заказ",
-            description = "BPMN: Заказчик → 'Создать заказ'. Товары собраны в корзине → заказ создаётся, продавец уведомляется.")
-    public ResponseEntity<OrderResponse> createOrder(@Valid @RequestBody CreateOrderRequest request) {
-        OrderResponse order = orderService.createOrder(request);
-        return ResponseEntity.status(HttpStatus.CREATED).body(order);
+            description = "BPMN: Заказчик → 'Создать заказ'. Запрос публикуется в Kafka, обработка асинхронная.")
+    public ResponseEntity<Void> createOrder(@Valid @RequestBody CreateOrderRequest request) {
+        orderService.createOrder(request);
+        return ResponseEntity.status(HttpStatus.ACCEPTED).build();
     }
 
     @GetMapping("/customer/{customerId}")

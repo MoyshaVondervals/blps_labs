@@ -63,3 +63,4 @@ app:
     base-url: ${NOTIFICATION_SERVICE_URL:http://localhost:8081}
 topic:
   send-notification: send-notification
+  create-order: create-order
