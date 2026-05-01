@@ -7,18 +7,18 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.2.5</version>
+        <version>4.0.6</version>
         <relativePath/>
     </parent>
 
     <groupId>ru.itmo</groupId>
-    <artifactId>order-management</artifactId>
+    <artifactId>orderManagement</artifactId>
     <version>0.0.1-SNAPSHOT</version>
-    <name>order-management</name>
+    <name>orderManagement</name>
     <description>BPMN Order Management - Seller Interface</description>
 
     <properties>
-        <java.version>19</java.version>
+        <java.version>21</java.version>
     </properties>
 
     <dependencies>
@@ -27,8 +27,9 @@
             <artifactId>spring-boot-starter-web</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.springframework.kafka</groupId>
-            <artifactId>spring-kafka</artifactId>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-kafka</artifactId>
+            <scope>compile</scope>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -53,7 +54,8 @@
         <dependency>
             <groupId>org.springdoc</groupId>
             <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
-            <version>2.5.0</version>
+            <version>3.0.3</version>
+            <scope>compile</scope>
         </dependency>
 
         <dependency>
@@ -62,11 +64,10 @@
             <scope>test</scope>
         </dependency>
 
-        <!-- Source: https://mvnrepository.com/artifact/com.atomikos/transactions-spring-boot3-starter -->
         <dependency>
             <groupId>com.atomikos</groupId>
-            <artifactId>transactions-spring-boot3-starter</artifactId>
-            <version>6.0.0M2</version>
+            <artifactId>transactions-spring-boot4-starter</artifactId>
+            <version>6.0.1</version>
             <scope>compile</scope>
         </dependency>
         <dependency>
@@ -81,6 +82,15 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webflux</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webclient</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-json</artifactId>
         </dependency>
     </dependencies>
 

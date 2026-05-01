@@ -7,6 +7,7 @@ spring:
     username: ${SPRING_DATASOURCE_USERNAME:postgres}
     password: ${SPRING_DATASOURCE_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
+
   app:
     xa:
       unique-resource-name: orderDb
@@ -20,7 +21,6 @@ spring:
       borrow-connection-timeout: 30
 
 
-
   jpa:
     hibernate:
       ddl-auto: update
@@ -31,8 +31,9 @@ spring:
         format_sql: true
 
   jackson:
-    serialization:
-      write-dates-as-timestamps: false
+    datatype:
+      datetime:
+        write-dates-as-timestamps: false
 
   kafka:
     bootstrap-servers: localhost:29092
@@ -62,7 +63,6 @@ spring:
 
 server:
   port: 8081
-
 
 
 springdoc:
