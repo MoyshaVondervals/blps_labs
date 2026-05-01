@@ -28,7 +28,7 @@ public class ProductService {
     private final SellerRepository sellerRepository;
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
-    @PreAuthorize("hasAuthority(" + CREATE_PRODUCT + ")")
+    @PreAuthorize("hasAuthority('" + CREATE_PRODUCT + "')")
     public ProductResponse createProduct(CreateProductRequest request) {
         Seller seller = sellerRepository.findById(request.getSellerId())
                 .orElseThrow(() -> new ResourceNotFoundException(
@@ -48,7 +48,7 @@ public class ProductService {
     }
 
     @Transactional(isolation = Isolation.REPEATABLE_READ)
-    @PreAuthorize("hasAuthority(" + EDIT_PRODUCT + ")")
+    @PreAuthorize("hasAuthority('" + EDIT_PRODUCT + "')")
     public ProductResponse updateProduct(Long productId, UpdateProductRequest request) {
         Product product = findProductOrThrow(productId);
 
@@ -71,7 +71,7 @@ public class ProductService {
     }
 
     @Transactional(isolation = Isolation.REPEATABLE_READ)
-    @PreAuthorize("hasAuthority(" + DELETE_PRODUCT + ")")
+    @PreAuthorize("hasAuthority('" + DELETE_PRODUCT + "')")
     public void deleteProduct(Long productId) {
         Product product = findProductOrThrow(productId);
         productRepository.delete(product);

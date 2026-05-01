@@ -3,7 +3,7 @@ package ru.itmo.ordermanagement.service;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
-import ru.itmo.ordermanagement.dto.NotificationResponse;
+import ru.itmo.ordermanagement.dto.NotificationEvent;
 import ru.itmo.ordermanagement.model.enums.RecipientType;
 
 import java.io.IOException;
@@ -45,7 +45,7 @@ public class SseEmitterService {
     }
 
     public void sendNotification(RecipientType recipientType, Long recipientId,
-                                 NotificationResponse notification) {
+                                 NotificationEvent notification) {
         String key = buildKey(recipientType, recipientId);
         List<SseEmitter> recipientEmitters = emitters.get(key);
 

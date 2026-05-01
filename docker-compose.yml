@@ -1,0 +1,87 @@
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:6.2.4
+    healthcheck:
+      test: ["CMD", "nc", "-vz", "localhost", "2181"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - 22181:2181
+    platform: linux/amd64
+  kafka:
+    image: confluentinc/cp-kafka:6.2.4
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    ports:
+      - 29092:29092
+    healthcheck:
+      test: ["CMD", "nc", "-vz", "localhost", "9092"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENERS: OUTSIDE://:29092,INTERNAL://:9092
+      KAFKA_ADVERTISED_LISTENERS: OUTSIDE://localhost:29092,INTERNAL://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,OUTSIDE:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    platform: linux/amd64
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui
+    container_name: kafka-ui
+    ports:
+      - "8085:8080"
+    restart: always
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    platform: linux/amd64
+
+#  db:
+#    image: postgres:16-alpine
+#    container_name: order-management-db
+#    environment:
+#      POSTGRES_DB: order_management
+#      POSTGRES_USER: postgres
+#      POSTGRES_PASSWORD: postgres
+#    ports:
+#      - "5432:5432"
+#    volumes:
+#      - db_data:/var/lib/postgresql/data
+#      - ./lab1/src/main/resources/schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+#    healthcheck:
+#      test: [ "CMD-SHELL", "pg_isready -U postgres -d order_management" ]
+#      interval: 5s
+#      timeout: 3s
+#      retries: 20
+
+  kafka-topics-generator:
+    image: confluentinc/cp-kafka:6.2.4
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: [ "/bin/sh", "-c" ]
+    command: |
+      # blocks until kafka is reachable
+      kafka-topics --bootstrap-server kafka:9092 --list
+
+      echo -e 'Creating kafka topics'
+      kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic send-order-event --replication-factor 1 --partitions 2
+
+      echo -e 'Successfully created the following topics:'
+      kafka-topics --bootstrap-server kafka:9092 --list
+    platform: linux/amd64
+
+volumes:
+  db_data:

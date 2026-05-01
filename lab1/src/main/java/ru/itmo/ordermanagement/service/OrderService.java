@@ -19,6 +19,7 @@ import ru.itmo.ordermanagement.exception.ResourceNotFoundException;
 import ru.itmo.ordermanagement.model.entity.*;
 import ru.itmo.ordermanagement.model.enums.OrderStatus;
 import ru.itmo.ordermanagement.repository.*;
+import ru.itmo.ordermanagement.service.kafka.CreateOrderPublisher;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -38,11 +39,12 @@ public class OrderService {
     private final ProductRepository productRepository;
     private final NotificationService notificationService;
     private final OrderBatchTransactionService orderBatchTransactionService;
+    private final CreateOrderPublisher createOrderPublisher;
 
     private final PlatformTransactionManager txManager;
 
-    //    @Transactional(isolation = Isolation.SERIALIZABLE)
-    @PreAuthorize("hasAuthority(" + CREATE_ORDER + ")")
+    /*
+    @PreAuthorize("hasAuthority('" + CREATE_ORDER + "')")
     public OrderResponse createOrder(CreateOrderRequest request) {
         TransactionTemplate tx = new TransactionTemplate(txManager);
         tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRED);
@@ -101,6 +103,13 @@ public class OrderService {
             }
         });
     }
+    */
+
+    @PreAuthorize("hasAuthority('" + CREATE_ORDER + "')")
+    public void createOrder(CreateOrderRequest request) {
+        createOrderPublisher.publish(request);
+        log.info("Create order request published for customer #{}", request.getCustomerId());
+    }
 
 
     //    @Transactional(isolation = Isolation.REPEATABLE_READ)
@@ -142,6 +151,7 @@ public class OrderService {
     }
 
     @Transactional(isolation = Isolation.REPEATABLE_READ)
+    @PreAuthorize("hasAuthority('" + CHANGE_ORDER_STATUS + "')")
     public OrderResponse assembleOrder(Long orderId) {
         Order order = findOrderOrThrow(orderId);
         assertStatus(order, OrderStatus.COOKING);
@@ -155,6 +165,7 @@ public class OrderService {
     }
 
     @Transactional(isolation = Isolation.SERIALIZABLE)
+    @PreAuthorize("hasAuthority('" + SEARCH_COURIER + "," + CHANGE_ORDER_STATUS + "')")
     public OrderResponse searchCourier(Long orderId) {
         Order order = findOrderOrThrow(orderId);
         assertStatus(order, OrderStatus.ASSEMBLING);
@@ -171,7 +182,7 @@ public class OrderService {
     }
 
     //    @Transactional(isolation = Isolation.SERIALIZABLE)
-    public void assignCourier(Order order, Courier courier) {
+    private void assignCourier(Order order, Courier courier) {
         TransactionTemplate tx = new TransactionTemplate(txManager);
         tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_MANDATORY); //тут мандатори кароч потому что вызываем
         tx.setTimeout(30);
@@ -200,7 +211,7 @@ public class OrderService {
     }
 
     @Transactional(isolation = Isolation.REPEATABLE_READ)
-    @PreAuthorize("hasAuthority(" + ACCEPT_DELIVERY + ")")
+    @PreAuthorize("hasAuthority('" + ACCEPT_DELIVERY + "')")
     public OrderResponse courierAcceptDelivery(Long orderId, Long courierId) {
         Order order = findOrderOrThrow(orderId);
         assertStatus(order, OrderStatus.AWAITING_COURIER);
@@ -217,6 +228,7 @@ public class OrderService {
     }
 
     //    @Transactional(isolation = Isolation.REPEATABLE_READ)
+    @PreAuthorize("hasAuthority('" + GET_ORDER_TO_DELIVERY + "')")
     public OrderResponse courierArrived(Long orderId, Long courierId) {
         TransactionTemplate tx = new TransactionTemplate(txManager);
         tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRED);
@@ -254,7 +266,7 @@ public class OrderService {
     }
 
     //    @Transactional(isolation = Isolation.REPEATABLE_READ)
-    @PreAuthorize("hasAuthority(" + DELIVER_ORDER + ")")
+    @PreAuthorize("hasAuthority('" + DELIVER_ORDER + "')")
     public OrderResponse deliverOrder(Long orderId, Long courierId) {
         TransactionTemplate tx = new TransactionTemplate(txManager);
         tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRED);
@@ -301,13 +313,13 @@ public class OrderService {
                 .map(this::toResponse);
     }
 
-    @PreAuthorize("hasAuthority(" + VIEW_ALL_ORDERS + ")")
+    @PreAuthorize("hasAuthority('" + VIEW_ALL_ORDERS + "')")
     public Page<OrderResponse> getOrdersBySeller(Long sellerId, Pageable pageable) {
         return orderRepository.findBySellerId(sellerId, pageable)
                 .map(this::toResponse);
     }
 
-    @PreAuthorize("hasAuthority(" + VIEW_DELIVERY_ORDERS + ")")
+    @PreAuthorize("hasAuthority('" + VIEW_DELIVERY_ORDERS + "')")
     public Page<OrderResponse> getOrdersByCourier(Long courierId, Pageable pageable) {
         return orderRepository.findByCourierId(courierId, pageable)
                 .map(this::toResponse);

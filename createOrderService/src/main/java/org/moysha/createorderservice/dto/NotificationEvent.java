@@ -1,14 +1,14 @@
-package ru.itmo.ordermanagement.dto;
+package org.moysha.createorderservice.dto;
 
 import lombok.Builder;
 import lombok.Data;
-import ru.itmo.ordermanagement.model.enums.RecipientType;
+import org.moysha.createorderservice.model.enums.RecipientType;
 
 import java.time.LocalDateTime;
 
 @Data
 @Builder
-public class NotificationResponse {
+public class NotificationEvent {
     private Long id;
     private RecipientType recipientType;
     private Long recipientId;
@@ -17,3 +17,4 @@ public class NotificationResponse {
     private Boolean isRead;
     private LocalDateTime createdAt;
 }
+

@@ -1,3 +1,23 @@
+## Docker запуск (приложение + PostgreSQL)
+
+```zsh
+cd /Users/moyshavondervals/IdeaProjects/blps_labs/lab1
+docker compose up -d --build
+```
+
+Проверка API (Basic Auth из `users.xml`):
+
+```zsh
+curl -u moysha:2281337 http://localhost:8080/api/customers
+```
+
+Остановка:
+
+```zsh
+cd /Users/moyshavondervals/IdeaProjects/blps_labs/lab1
+docker compose down
+```
+
 
 
 | POST | `/api/customers` | Создать заказчика |
@@ -106,4 +126,18 @@ curl -N http://localhost:8080/api/sse/notifications/CUSTOMER/1
 curl -N http://localhost:8080/api/sse/notifications/SELLER/1
 # Курьер
 curl -N http://localhost:8080/api/sse/notifications/COURIER/1
+```
+
+## Kafka: подписка на топик уведомлений
+
+Если нужно отладить поток напрямую, можно подписаться на Kafka-топик.
+
+```zsh
+kafka-console-consumer --bootstrap-server localhost:29092 --topic send-notification --from-beginning
+```
+
+Если используешь контейнер Kafka, выполняй команду внутри контейнера:
+
+```zsh
+docker exec -it kafka kafka-console-consumer --bootstrap-server localhost:9092 --topic send-notification --from-beginning
 ```

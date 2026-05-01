@@ -7,17 +7,13 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
-import ru.itmo.ordermanagement.dto.NotificationResponse;
+import ru.itmo.ordermanagement.dto.NotificationEvent;
 import ru.itmo.ordermanagement.exception.ResourceNotFoundException;
 import ru.itmo.ordermanagement.model.entity.Notification;
 import ru.itmo.ordermanagement.model.entity.Order;
 import ru.itmo.ordermanagement.model.enums.RecipientType;
 import ru.itmo.ordermanagement.repository.NotificationRepository;
-
-import java.util.List;
-import java.util.stream.Collectors;
+import ru.itmo.ordermanagement.service.kafka.NotificationEventPublisher;
 
 
 @Service
@@ -27,27 +23,21 @@ public class NotificationService {
 
     private final NotificationRepository notificationRepository;
     private final SseEmitterService sseEmitterService;
+    private final NotificationEventPublisher notificationEventPublisher;
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
-    public Notification send(RecipientType recipientType, Long recipientId,
+    public NotificationEvent send(RecipientType recipientType, Long recipientId,
                              Order order, String message) {
-        Notification notification = Notification.builder()
+        NotificationEvent notification = NotificationEvent.builder()
                 .recipientType(recipientType)
                 .recipientId(recipientId)
-                .order(order)
+                .orderId(order.getId())
                 .message(message)
                 .isRead(false)
                 .build();
-        notification = notificationRepository.save(notification);
-        log.info("Notification sent to {} #{}: {}", recipientType, recipientId, message);
+//        notification = notificationRepository.save(notification);
 
-        NotificationResponse response = toResponse(notification);
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                sseEmitterService.sendNotification(recipientType, recipientId, response);
-            }
-        });
+        notificationEventPublisher.publish(notification);
 
         return notification;
     }
@@ -87,13 +77,13 @@ public class NotificationService {
         send(RecipientType.SELLER, order.getSeller().getId(), order, message);
     }
 
-    public Page<NotificationResponse> getNotifications(RecipientType recipientType, Long recipientId, Pageable pageable) {
+    public Page<NotificationEvent> getNotifications(RecipientType recipientType, Long recipientId, Pageable pageable) {
         return notificationRepository
                 .findByRecipientTypeAndRecipientIdOrderByCreatedAtDesc(recipientType, recipientId, pageable)
                 .map(this::toResponse);
     }
 
-    public Page<NotificationResponse> getUnreadNotifications(RecipientType recipientType, Long recipientId, Pageable pageable) {
+    public Page<NotificationEvent> getUnreadNotifications(RecipientType recipientType, Long recipientId, Pageable pageable) {
         return notificationRepository
                 .findByRecipientTypeAndRecipientIdAndIsReadFalseOrderByCreatedAtDesc(recipientType, recipientId, pageable)
                 .map(this::toResponse);
@@ -108,8 +98,8 @@ public class NotificationService {
         notificationRepository.save(notification);
     }
 
-    private NotificationResponse toResponse(Notification n) {
-        return NotificationResponse.builder()
+    private NotificationEvent toResponse(Notification n) {
+        return NotificationEvent.builder()
                 .id(n.getId())
                 .recipientType(n.getRecipientType())
                 .recipientId(n.getRecipientId())
