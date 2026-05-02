@@ -79,6 +79,7 @@ services:
       echo -e 'Creating kafka topics'
       kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic create-order --replication-factor 1 --partitions 2
       kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic send-notification --replication-factor 1 --partitions 2
+      kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic search-courier --replication-factor 1 --partitions 2
 
       echo -e 'Successfully created the following topics:'
       kafka-topics --bootstrap-server kafka:9092 --list
@@ -140,6 +141,28 @@ services:
         condition: service_healthy
     ports:
       - "8082:8082"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/order_management
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: postgres
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: order_management
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+
+  search-courier-service:
+    build:
+      context: ./searchCourierService
+      dockerfile: Dockerfile
+    depends_on:
+      kafka:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    ports:
+      - "8083:8083"
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/order_management
       SPRING_DATASOURCE_USERNAME: postgres

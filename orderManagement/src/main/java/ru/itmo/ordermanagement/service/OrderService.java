@@ -20,6 +20,7 @@ import ru.itmo.ordermanagement.model.entity.*;
 import ru.itmo.ordermanagement.model.enums.OrderStatus;
 import ru.itmo.ordermanagement.repository.*;
 import ru.itmo.ordermanagement.service.kafka.CreateOrderPublisher;
+import ru.itmo.ordermanagement.service.kafka.SearchCourierPublisher;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -40,6 +41,7 @@ public class OrderService {
     private final NotificationService notificationService;
     private final OrderBatchTransactionService orderBatchTransactionService;
     private final CreateOrderPublisher createOrderPublisher;
+    private final SearchCourierPublisher searchCourierPublisher;
 
     private final PlatformTransactionManager txManager;
 
@@ -173,42 +175,40 @@ public class OrderService {
         order.setStatus(OrderStatus.SEARCHING_COURIER);
         order = orderRepository.save(order);
 
-        final Order savedOrder = order;
-        courierRepository.findFirstByAvailableTrue().ifPresent(courier ->
-                assignCourier(savedOrder, courier)
-        );
+        searchCourierPublisher.publish(new SearchCourierRequest(orderId));
+        log.info("Order #{} moved to SEARCHING_COURIER and published to search-courier topic", orderId);
 
-        return toResponse(orderRepository.findById(orderId).orElseThrow());
+        return toResponse(order);
     }
 
     //    @Transactional(isolation = Isolation.SERIALIZABLE)
-    private void assignCourier(Order order, Courier courier) {
-        TransactionTemplate tx = new TransactionTemplate(txManager);
-        tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_MANDATORY); //тут мандатори кароч потому что вызываем
-        tx.setTimeout(30);
-        tx.setIsolationLevel(TransactionDefinition.ISOLATION_SERIALIZABLE);
-        tx.execute(status -> {
-            try {
-                courier.setAvailable(false);
-                courierRepository.save(courier);
-
-                order.setCourier(courier);
-                order.setStatus(OrderStatus.AWAITING_COURIER);
-                order.setCourierAssignedAt(LocalDateTime.now());
-                order.setCourierNotifiedAt(LocalDateTime.now());
-                orderRepository.save(order);
-
-                notificationService.notifyCourierNewDelivery(order);
-                log.info("Order #{}: courier #{} assigned, status: AWAITING_COURIER",
-                        order.getId(), courier.getId());
-            } catch (Exception e) {
-                status.setRollbackOnly();
-                throw e;
-            }
-            return null;
-        });
-
-    }
+//    private void assignCourier(Order order, Courier courier) {
+//        TransactionTemplate tx = new TransactionTemplate(txManager);
+//        tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_MANDATORY); //тут мандатори кароч потому что вызываем
+//        tx.setTimeout(30);
+//        tx.setIsolationLevel(TransactionDefinition.ISOLATION_SERIALIZABLE);
+//        tx.execute(status -> {
+//            try {
+//                courier.setAvailable(false);
+//                courierRepository.save(courier);
+//
+//                order.setCourier(courier);
+//                order.setStatus(OrderStatus.AWAITING_COURIER);
+//                order.setCourierAssignedAt(LocalDateTime.now());
+//                order.setCourierNotifiedAt(LocalDateTime.now());
+//                orderRepository.save(order);
+//
+//                notificationService.notifyCourierNewDelivery(order);
+//                log.info("Order #{}: courier #{} assigned, status: AWAITING_COURIER",
+//                        order.getId(), courier.getId());
+//            } catch (Exception e) {
+//                status.setRollbackOnly();
+//                throw e;
+//            }
+//            return null;
+//        });
+//
+//    }
 
     @Transactional(isolation = Isolation.REPEATABLE_READ)
     @PreAuthorize("hasAuthority('" + ACCEPT_DELIVERY + "')")
