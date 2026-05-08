@@ -141,3 +141,30 @@ kafka-console-consumer --bootstrap-server localhost:29092 --topic send-notificat
 ```zsh
 docker exec -it kafka kafka-console-consumer --bootstrap-server localhost:9092 --topic send-notification --from-beginning
 ```
+
+## ERPNext (этап 1): запуск в Docker
+
+```zsh
+cd /Users/moyshavondervals/IdeaProjects/blps_labs
+docker compose -f docker-compose.erpnext.yml up -d
+```
+
+Открыть UI:
+
+- http://erpnext.localhost:8090 (логин `Administrator`, пароль `admin`)
+
+Если `*.localhost` не резолвится, добавь `erpnext.localhost` в `/etc/hosts` или используй `http://localhost:8090` и заголовок `Host: erpnext.localhost`.
+
+Остановка:
+
+```zsh
+cd /Users/moyshavondervals/IdeaProjects/blps_labs
+docker compose -f docker-compose.erpnext.yml down
+```
+
+Сбросить данные ERPNext (удалить тома):
+
+```zsh
+cd /Users/moyshavondervals/IdeaProjects/blps_labs
+docker compose -f docker-compose.erpnext.yml down -v
+```
