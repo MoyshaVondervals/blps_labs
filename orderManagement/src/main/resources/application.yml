@@ -2,6 +2,11 @@ spring:
   application:
     name: orderManagement
 
+  quartz:
+    job-store-type: memory
+    properties:
+      org.quartz.threadPool.threadCount: 5
+
   mvc:
     async:
       request-timeout: 1800000  # 30 минут для SSE-соединений
