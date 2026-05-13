@@ -2,7 +2,6 @@ package org.moysha.createorderservice.model.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
-import org.springframework.data.relational.core.mapping.Table;
 
 import java.time.LocalDateTime;
 

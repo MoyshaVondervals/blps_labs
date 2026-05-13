@@ -13,11 +13,8 @@ import org.moysha.createorderservice.model.enums.OrderStatus;
 import org.moysha.createorderservice.model.enums.RecipientType;
 import org.moysha.createorderservice.repository.*;
 import org.moysha.createorderservice.service.kafka.NotificationEventPublisher;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.TransactionDefinition;
-import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.stream.Collectors;
@@ -29,69 +26,54 @@ public class CreateOrderService {
     private final OrderRepository orderRepository;
     private final CustomerRepository customerRepository;
     private final SellerRepository sellerRepository;
-    private final CourierRepository courierRepository;
     private final ProductRepository productRepository;
     private final NotificationEventPublisher notificationEventPublisher;
 
-    @Qualifier("chainedTransactionManager")
-    private final PlatformTransactionManager txManager;
-    //    @Transactional(isolation = Isolation.SERIALIZABLE)
+    @Transactional
     public OrderResponse createOrder(CreateOrderRequest request) {
-        TransactionTemplate tx = new TransactionTemplate(txManager);
-        tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRED);
-        tx.setTimeout(30);
-        tx.setIsolationLevel(TransactionDefinition.ISOLATION_SERIALIZABLE);
-        return tx.execute(status -> {
-            try {
-                Customer customer = customerRepository.findById(request.getCustomerId())
-                        .orElseThrow(() -> new ResourceNotFoundException(
-                                "Customer not found: " + request.getCustomerId()));
+        Customer customer = customerRepository.findById(request.getCustomerId())
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Customer not found: " + request.getCustomerId()));
 
-                Seller seller = sellerRepository.findById(request.getSellerId())
-                        .orElseThrow(() -> new ResourceNotFoundException(
-                                "Seller not found: " + request.getSellerId()));
-                Order order = Order.builder()
-                        .customer(customer)
-                        .seller(seller)
-                        .status(OrderStatus.IN_PROCESSING)
-                        .build();
-                for (OrderItemDto itemDto : request.getItems()) {
-                    Product product = productRepository.findById(itemDto.getProductId())
-                            .orElseThrow(() -> new ResourceNotFoundException(
-                                    "Product not found: " + itemDto.getProductId()));
+        Seller seller = sellerRepository.findById(request.getSellerId())
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Seller not found: " + request.getSellerId()));
+        Order order = Order.builder()
+                .customer(customer)
+                .seller(seller)
+                .status(OrderStatus.IN_PROCESSING)
+                .build();
+        for (OrderItemDto itemDto : request.getItems()) {
+            Product product = productRepository.findById(itemDto.getProductId())
+                    .orElseThrow(() -> new ResourceNotFoundException(
+                            "Product not found: " + itemDto.getProductId()));
 
-                    if (!product.getSeller().getId().equals(seller.getId())) {
-                        throw new InvalidOrderStateException(
-                                "Product #" + product.getId() + " does not belong to seller #" + seller.getId());
-                    }
-                    if (!product.getAvailable()) {
-                        throw new InvalidOrderStateException(
-                                "Product '" + product.getName() + "' is not available");
-                    }
-
-                    OrderItem item = OrderItem.builder()
-                            .product(product)
-                            .productName(product.getName())
-                            .quantity(itemDto.getQuantity())
-                            .price(product.getPrice())
-                            .build();
-                    order.addItem(item);
-                }
-                order.recalculateTotal();
-                order.setSellerNotifiedAt(LocalDateTime.now());
-
-                order = orderRepository.save(order);
-
-                notifySellerNewOrder(order);
-                notifyCustomerStatusChanged(order);
-
-                return toResponse(order);
-
-            } catch (Exception e) {
-                status.setRollbackOnly();
-                throw e;
+            if (!product.getSeller().getId().equals(seller.getId())) {
+                throw new InvalidOrderStateException(
+                        "Product #" + product.getId() + " does not belong to seller #" + seller.getId());
             }
-        });
+            if (!product.getAvailable()) {
+                throw new InvalidOrderStateException(
+                        "Product '" + product.getName() + "' is not available");
+            }
+
+            OrderItem item = OrderItem.builder()
+                    .product(product)
+                    .productName(product.getName())
+                    .quantity(itemDto.getQuantity())
+                    .price(product.getPrice())
+                    .build();
+            order.addItem(item);
+        }
+        order.recalculateTotal();
+        order.setSellerNotifiedAt(LocalDateTime.now());
+
+        order = orderRepository.save(order);
+
+        notifySellerNewOrder(order);
+        notifyCustomerStatusChanged(order);
+
+        return toResponse(order);
     }
 
     private void notifyCustomerStatusChanged(Order order) {

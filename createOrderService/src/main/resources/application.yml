@@ -69,7 +69,6 @@ spring:
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
-      transaction-id-prefix: create-order-tx-
       properties:
         acks: 1
         spring.json.add.type.headers: false
