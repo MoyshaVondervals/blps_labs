@@ -11,6 +11,14 @@ docker compose up -d --build
 curl -u moysha:2281337 http://localhost:8080/api/customers
 ```
 
+PostgreSQL из IDE подключается через host-port `5433`, чтобы не конфликтовать с локальным PostgreSQL:
+
+```text
+jdbc:postgresql://localhost:5433/order_management
+user: postgres
+password: postgres
+```
+
 Остановка:
 
 ```zsh
@@ -23,6 +31,8 @@ docker compose down
 | POST | `/api/customers` | Создать заказчика |
 | GET | `/api/customers` | Получить всех |
 | GET | `/api/customers/{id}` | Получить по ID |
+
+`POST /api/customers` принимает необязательное поле `dolibarrThirdpartyId`. Для выставления счета после подтверждения заказа продавцом это поле обязательно: оно должно указывать на `socid` контрагента в Dolibarr.
 
 
 | POST | `/api/sellers` | Создать продавца |
@@ -67,11 +77,25 @@ docker compose down
 | GET | `/api/sse/notifications/SELLER/{id}` | SSE-поток уведомлений продавца |
 | GET | `/api/sse/notifications/COURIER/{id}` | SSE-поток уведомлений курьера |
 
+## Dolibarr / JCA invoices
+
+Dolibarr поднимается в Docker на `http://localhost:8090` с логином `admin` и паролем `admin`.
+
+Перед подтверждением заказа нужно:
+
+1. В Dolibarr включить/проверить REST API и модуль счетов.
+2. Создать или выбрать контрагента-покупателя.
+3. Сгенерировать API key для пользователя Dolibarr.
+4. Запустить `order-management` с переменной `DOLIBARR_API_KEY=<ключ>`.
+5. Создать customer в API с `dolibarrThirdpartyId`, равным `socid` контрагента.
+
+При `POST /api/orders/{id}/review` с `{"canFulfill": true}` приложение через JCA outbound connector вызывает Dolibarr REST API, создает счет, добавляет строки и валидирует счет. Если Dolibarr недоступен или возвращает ошибку, заказ остается в `IN_PROCESSING`. Валидацию можно отключить переменной `DOLIBARR_VALIDATE_ON_CREATE=false`.
+
 
 ```
 # создать участников
 curl -X POST http://localhost:8080/api/customers \
-  -d '{"name": "Иван Иванов", "email": "ivan@mail.ru", "phone": "+79001234567"}'
+  -d '{"name": "Иван Иванов", "email": "ivan@mail.ru", "phone": "+79001234567", "dolibarrThirdpartyId": 1}'
 
 curl -X POST http://localhost:8080/api/sellers \
   -d '{"name": "Додопитса", "address": "Микробарберс"}'

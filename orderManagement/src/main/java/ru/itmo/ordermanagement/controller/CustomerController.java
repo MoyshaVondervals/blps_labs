@@ -32,6 +32,7 @@ public class CustomerController {
                 .name(request.getName())
                 .email(request.getEmail())
                 .phone(request.getPhone())
+                .dolibarrThirdpartyId(request.getDolibarrThirdpartyId())
                 .build();
         return ResponseEntity.status(HttpStatus.CREATED).body(customerRepository.save(customer));
     }

@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS customers (
     name            VARCHAR(255) NOT NULL,
     email           VARCHAR(255),
     phone           VARCHAR(50),
+    dolibarr_thirdparty_id BIGINT,
     created_at      TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
@@ -47,6 +48,9 @@ CREATE TABLE IF NOT EXISTS orders (
     courier_arrived_at      TIMESTAMP,
     cancelled_at            TIMESTAMP,
     delivered_at            TIMESTAMP,
+    dolibarr_invoice_id     BIGINT,
+    dolibarr_invoice_ref    VARCHAR(255),
+    invoice_created_at      TIMESTAMP,
     cancel_reason           VARCHAR(500)
 );
 

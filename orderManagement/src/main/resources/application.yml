@@ -68,6 +68,13 @@ app:
   courier-arrival-timeout-minutes: 30
   notification-service:
     base-url: ${NOTIFICATION_SERVICE_URL:http://localhost:8081}
+  dolibarr:
+    base-url: ${DOLIBARR_BASE_URL:http://localhost:8084}
+    api-key: ${DOLIBARR_API_KEY:}
+    default-vat-rate: ${DOLIBARR_DEFAULT_VAT_RATE:0}
+    connect-timeout: ${DOLIBARR_CONNECT_TIMEOUT:5s}
+    read-timeout: ${DOLIBARR_READ_TIMEOUT:20s}
+    validate-on-create: ${DOLIBARR_VALIDATE_ON_CREATE:true}
 topic:
   send-notification: send-notification
   create-order: create-order
