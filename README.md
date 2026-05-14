@@ -32,7 +32,7 @@ docker compose down
 | GET | `/api/customers` | Получить всех |
 | GET | `/api/customers/{id}` | Получить по ID |
 
-`POST /api/customers` принимает необязательное поле `dolibarrThirdpartyId`. Для выставления счета после подтверждения заказа продавцом это поле обязательно: оно должно указывать на `socid` контрагента в Dolibarr.
+
 
 
 | POST | `/api/sellers` | Создать продавца |
@@ -77,19 +77,6 @@ docker compose down
 | GET | `/api/sse/notifications/SELLER/{id}` | SSE-поток уведомлений продавца |
 | GET | `/api/sse/notifications/COURIER/{id}` | SSE-поток уведомлений курьера |
 
-## Dolibarr / JCA invoices
-
-Dolibarr поднимается в Docker на `http://localhost:8090` с логином `admin` и паролем `admin`.
-
-Перед подтверждением заказа нужно:
-
-1. В Dolibarr включить/проверить REST API и модуль счетов.
-2. Создать или выбрать контрагента-покупателя.
-3. Сгенерировать API key для пользователя Dolibarr.
-4. Запустить `order-management` с переменной `DOLIBARR_API_KEY=<ключ>`.
-5. Создать customer в API с `dolibarrThirdpartyId`, равным `socid` контрагента.
-
-При `POST /api/orders/{id}/review` с `{"canFulfill": true}` приложение через JCA outbound connector вызывает Dolibarr REST API, создает счет, добавляет строки и валидирует счет. Если Dolibarr недоступен или возвращает ошибку, заказ остается в `IN_PROCESSING`. Валидацию можно отключить переменной `DOLIBARR_VALIDATE_ON_CREATE=false`.
 
 
 ```
