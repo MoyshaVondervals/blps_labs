@@ -20,9 +20,12 @@ public class OrderResponse {
     private String courierName;
     private OrderStatus status;
     private BigDecimal totalPrice;
+    private Long dolibarrInvoiceId;
+    private String dolibarrInvoiceRef;
     private List<OrderItemResponse> items;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+    private LocalDateTime invoiceCreatedAt;
     private LocalDateTime deliveredAt;
     private String cancelReason;
 }

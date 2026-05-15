@@ -7,6 +7,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import ru.itmo.ordermanagement.integration.dolibarr.DolibarrInvoiceException;
 
 import java.time.LocalDateTime;
 import java.util.HashMap;
@@ -23,6 +24,16 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(InvalidOrderStateException.class)
     public ResponseEntity<Map<String, Object>> handleInvalidState(InvalidOrderStateException ex) {
         return buildResponse(HttpStatus.CONFLICT, ex.getMessage());
+    }
+
+    @ExceptionHandler(BadRequestException.class)
+    public ResponseEntity<Map<String, Object>> handleBadRequest(BadRequestException ex) {
+        return buildResponse(HttpStatus.BAD_REQUEST, ex.getMessage());
+    }
+
+    @ExceptionHandler(DolibarrInvoiceException.class)
+    public ResponseEntity<Map<String, Object>> handleDolibarrInvoice(DolibarrInvoiceException ex) {
+        return buildResponse(HttpStatus.BAD_GATEWAY, ex.getMessage());
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)

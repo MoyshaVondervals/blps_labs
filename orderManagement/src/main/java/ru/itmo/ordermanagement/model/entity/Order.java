@@ -63,6 +63,15 @@ public class Order {
     @Column(name = "delivered_at")
     private LocalDateTime deliveredAt;
 
+    @Column(name = "dolibarr_invoice_id")
+    private Long dolibarrInvoiceId;
+
+    @Column(name = "dolibarr_invoice_ref")
+    private String dolibarrInvoiceRef;
+
+    @Column(name = "invoice_created_at")
+    private LocalDateTime invoiceCreatedAt;
+
     @Column(name = "cancel_reason", length = 500)
     private String cancelReason;
 

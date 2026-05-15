@@ -1,0 +1,66 @@
+services:
+  erpnext-mariadb:
+    image: mariadb:10.6
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --skip-character-set-client-handshake
+    environment:
+      MYSQL_ROOT_PASSWORD: erpnext
+      MYSQL_DATABASE: erpnext
+      MYSQL_USER: erpnext
+      MYSQL_PASSWORD: erpnext
+    volumes:
+      - erpnext_mariadb:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -p$$MYSQL_ROOT_PASSWORD"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  erpnext-redis:
+    image: redis:7-alpine
+    volumes:
+      - erpnext_redis:/data
+
+  erpnext-configurator:
+    image: frappe/erpnext:version-15
+    depends_on:
+      erpnext-mariadb:
+        condition: service_healthy
+      erpnext-redis:
+        condition: service_started
+    volumes:
+      - erpnext_sites:/home/frappe/frappe-bench/sites
+      - erpnext_logs:/home/frappe/frappe-bench/logs
+    working_dir: /home/frappe/frappe-bench
+    command: ["bash", "-c", "bench set-config -g db_host erpnext-mariadb; bench set-config -g db_port 3306; bench set-config -g redis_cache redis://erpnext-redis:6379; bench set-config -g redis_queue redis://erpnext-redis:6379; bench set-config -g redis_socketio redis://erpnext-redis:6379; bench set-config -g socketio_port 9000"]
+
+  erpnext-site-creator:
+    image: frappe/erpnext:version-15
+    depends_on:
+      erpnext-configurator:
+        condition: service_completed_successfully
+    volumes:
+      - erpnext_sites:/home/frappe/frappe-bench/sites
+      - erpnext_logs:/home/frappe/frappe-bench/logs
+    working_dir: /home/frappe/frappe-bench
+    command: ["bash", "-c", "if [ -d sites/erpnext.localhost ]; then echo 'Site erpnext.localhost already exists'; else bench new-site erpnext.localhost --mariadb-root-password erpnext --admin-password admin --install-app erpnext --mariadb-user-host-login-scope='%' ; fi; bench use erpnext.localhost; exit 0"]
+
+  erpnext:
+    image: frappe/erpnext:version-15
+    depends_on:
+      erpnext-site-creator:
+        condition: service_completed_successfully
+    volumes:
+      - erpnext_sites:/home/frappe/frappe-bench/sites
+      - erpnext_logs:/home/frappe/frappe-bench/logs
+      - ./erpnext.Procfile:/home/frappe/frappe-bench/Procfile:ro
+    ports:
+      - "8090:8000"
+      - "8091:9000"
+    working_dir: /home/frappe/frappe-bench
+    command: ["bash", "-c", "bench start -p /home/frappe/frappe-bench/Procfile"]
+
+volumes:
+  erpnext_mariadb:
+  erpnext_redis:
+  erpnext_sites:
+  erpnext_logs:

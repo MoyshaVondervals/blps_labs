@@ -29,13 +29,12 @@ public class CreateOrderService {
     private final OrderRepository orderRepository;
     private final CustomerRepository customerRepository;
     private final SellerRepository sellerRepository;
-    private final CourierRepository courierRepository;
     private final ProductRepository productRepository;
     private final NotificationEventPublisher notificationEventPublisher;
 
     @Qualifier("chainedTransactionManager")
     private final PlatformTransactionManager txManager;
-    //    @Transactional(isolation = Isolation.SERIALIZABLE)
+
     public OrderResponse createOrder(CreateOrderRequest request) {
         TransactionTemplate tx = new TransactionTemplate(txManager);
         tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRED);
@@ -86,7 +85,6 @@ public class CreateOrderService {
                 notifyCustomerStatusChanged(order);
 
                 return toResponse(order);
-
             } catch (Exception e) {
                 status.setRollbackOnly();
                 throw e;

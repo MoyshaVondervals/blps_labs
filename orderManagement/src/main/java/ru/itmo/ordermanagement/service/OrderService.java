@@ -16,6 +16,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 import ru.itmo.ordermanagement.dto.*;
 import ru.itmo.ordermanagement.exception.InvalidOrderStateException;
 import ru.itmo.ordermanagement.exception.ResourceNotFoundException;
+import ru.itmo.ordermanagement.integration.dolibarr.DolibarrConnection;
 import ru.itmo.ordermanagement.model.entity.*;
 import ru.itmo.ordermanagement.model.enums.OrderStatus;
 import ru.itmo.ordermanagement.repository.*;
@@ -40,6 +41,7 @@ public class OrderService {
     private final ProductRepository productRepository;
     private final NotificationService notificationService;
     private final OrderBatchTransactionService orderBatchTransactionService;
+    private final DolibarrInvoiceService dolibarrInvoiceService;
     private final CreateOrderPublisher createOrderPublisher;
     private final SearchCourierPublisher searchCourierPublisher;
 
@@ -115,7 +117,7 @@ public class OrderService {
 
 
     //    @Transactional(isolation = Isolation.REPEATABLE_READ)
-    @PreAuthorize("hasAuthority('" + CHANGE_ORDER_STATUS + ", " + CANCEL_ORDER + "')")
+    @PreAuthorize("hasAnyAuthority('" + CHANGE_ORDER_STATUS + "', '" + CANCEL_ORDER + "')")
     public OrderResponse reviewOrder(Long orderId, ReviewOrderRequest request) {
         TransactionTemplate tx = new TransactionTemplate(txManager);
         tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRED);
@@ -127,10 +129,17 @@ public class OrderService {
                 assertStatus(order, OrderStatus.IN_PROCESSING);
 
                 if (request.isCanFulfill()) {
+                    if (order.getDolibarrInvoiceId() == null) {
+                        DolibarrConnection.InvoiceResult invoice = dolibarrInvoiceService.createInvoice(order);
+                        order.setDolibarrInvoiceId(invoice.invoiceId());
+                        order.setDolibarrInvoiceRef(invoice.invoiceRef());
+                        order.setInvoiceCreatedAt(LocalDateTime.now());
+                    }
                     order.setStatus(OrderStatus.COOKING);
                     order = orderRepository.save(order);
                     notificationService.notifyCustomerStatusChanged(order);
-                    log.info("Order #{} accepted by seller, status: COOKING", orderId);
+                    log.info("Order #{} accepted by seller, invoice #{}, status: COOKING",
+                            orderId, order.getDolibarrInvoiceId());
                 } else {
                     order.setStatus(OrderStatus.CANCELLED);
                     order.setCancelledAt(LocalDateTime.now());
@@ -167,7 +176,7 @@ public class OrderService {
     }
 
     @Transactional(isolation = Isolation.SERIALIZABLE)
-    @PreAuthorize("hasAuthority('" + SEARCH_COURIER + "," + CHANGE_ORDER_STATUS + "')")
+    @PreAuthorize("hasAnyAuthority('" + SEARCH_COURIER + "', '" + CHANGE_ORDER_STATUS + "')")
     public OrderResponse searchCourier(Long orderId) {
         Order order = findOrderOrThrow(orderId);
         assertStatus(order, OrderStatus.ASSEMBLING);
@@ -397,6 +406,8 @@ public class OrderService {
                 .courierName(order.getCourier() != null ? order.getCourier().getName() : null)
                 .status(order.getStatus())
                 .totalPrice(order.getTotalPrice())
+                .dolibarrInvoiceId(order.getDolibarrInvoiceId())
+                .dolibarrInvoiceRef(order.getDolibarrInvoiceRef())
                 .items(order.getItems().stream()
                         .map(i -> OrderItemResponse.builder()
                                 .id(i.getId())
@@ -408,6 +419,7 @@ public class OrderService {
                         .collect(Collectors.toList()))
                 .createdAt(order.getCreatedAt())
                 .updatedAt(order.getUpdatedAt())
+                .invoiceCreatedAt(order.getInvoiceCreatedAt())
                 .deliveredAt(order.getDeliveredAt())
                 .cancelReason(order.getCancelReason())
                 .build();

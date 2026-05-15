@@ -11,6 +11,14 @@ docker compose up -d --build
 curl -u moysha:2281337 http://localhost:8080/api/customers
 ```
 
+PostgreSQL из IDE подключается через host-port `5433`, чтобы не конфликтовать с локальным PostgreSQL:
+
+```text
+jdbc:postgresql://localhost:5433/order_management
+user: postgres
+password: postgres
+```
+
 Остановка:
 
 ```zsh
@@ -23,6 +31,8 @@ docker compose down
 | POST | `/api/customers` | Создать заказчика |
 | GET | `/api/customers` | Получить всех |
 | GET | `/api/customers/{id}` | Получить по ID |
+
+
 
 
 | POST | `/api/sellers` | Создать продавца |
@@ -68,10 +78,11 @@ docker compose down
 | GET | `/api/sse/notifications/COURIER/{id}` | SSE-поток уведомлений курьера |
 
 
+
 ```
 # создать участников
 curl -X POST http://localhost:8080/api/customers \
-  -d '{"name": "Иван Иванов", "email": "ivan@mail.ru", "phone": "+79001234567"}'
+  -d '{"name": "Иван Иванов", "email": "ivan@mail.ru", "phone": "+79001234567", "dolibarrThirdpartyId": 1}'
 
 curl -X POST http://localhost:8080/api/sellers \
   -d '{"name": "Додопитса", "address": "Микробарберс"}'
@@ -140,4 +151,31 @@ kafka-console-consumer --bootstrap-server localhost:29092 --topic send-notificat
 
 ```zsh
 docker exec -it kafka kafka-console-consumer --bootstrap-server localhost:9092 --topic send-notification --from-beginning
+```
+
+## ERPNext (этап 1): запуск в Docker
+
+```zsh
+cd /Users/moyshavondervals/IdeaProjects/blps_labs
+docker compose -f docker-compose.erpnext.yml up -d
+```
+
+Открыть UI:
+
+- http://erpnext.localhost:8090 (логин `Administrator`, пароль `admin`)
+
+Если `*.localhost` не резолвится, добавь `erpnext.localhost` в `/etc/hosts` или используй `http://localhost:8090` и заголовок `Host: erpnext.localhost`.
+
+Остановка:
+
+```zsh
+cd /Users/moyshavondervals/IdeaProjects/blps_labs
+docker compose -f docker-compose.erpnext.yml down
+```
+
+Сбросить данные ERPNext (удалить тома):
+
+```zsh
+cd /Users/moyshavondervals/IdeaProjects/blps_labs
+docker compose -f docker-compose.erpnext.yml down -v
 ```

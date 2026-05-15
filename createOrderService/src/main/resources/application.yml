@@ -71,7 +71,7 @@ spring:
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
       transaction-id-prefix: create-order-tx-
       properties:
-        acks: 1
+        acks: all
         spring.json.add.type.headers: false
 
 server:
