@@ -14,7 +14,8 @@ import org.springframework.transaction.PlatformTransactionManager;
 @Configuration
 public class KafkaTransactionConfig {
 
-    @Bean(name = "jpaTransactionManager")
+    @Bean(name = {"transactionManager", "jpaTransactionManager"})
+    @Primary
     public PlatformTransactionManager jpaTransactionManager(EntityManagerFactory entityManagerFactory) {
         return new JpaTransactionManager(entityManagerFactory);
     }
@@ -26,11 +27,9 @@ public class KafkaTransactionConfig {
     }
 
     @Bean(name = "chainedTransactionManager")
-    @Primary
     public ChainedKafkaTransactionManager<String, Object> chainedTransactionManager(
             @Qualifier("jpaTransactionManager") PlatformTransactionManager jpaTransactionManager,
             KafkaTransactionManager<String, Object> kafkaTransactionManager) {
         return new ChainedKafkaTransactionManager<>(kafkaTransactionManager, jpaTransactionManager);
     }
 }
-

@@ -13,11 +13,8 @@ import ru.itmo.searchcourierservice.model.enums.RecipientType;
 import ru.itmo.searchcourierservice.repository.CourierRepository;
 import ru.itmo.searchcourierservice.repository.OrderRepository;
 import ru.itmo.searchcourierservice.service.kafka.NotificationEventPublisher;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.TransactionDefinition;
-import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 
@@ -30,35 +27,21 @@ public class SearchCourierService {
     private final CourierRepository courierRepository;
     private final NotificationEventPublisher notificationEventPublisher;
 
-    @Qualifier("chainedTransactionManager")
-    private final PlatformTransactionManager txManager;
-
+    @Transactional(transactionManager = "jpaTransactionManager")
     public void searchCourier(SearchCourierRequest request) {
-        TransactionTemplate tx = new TransactionTemplate(txManager);
-        tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRED);
-        tx.setTimeout(30);
-        tx.setIsolationLevel(TransactionDefinition.ISOLATION_SERIALIZABLE);
-        tx.execute(status -> {
-            try {
-                Order order = orderRepository.findById(request.getOrderId())
-                        .orElseThrow(() -> new ResourceNotFoundException(
-                                "Order not found: " + request.getOrderId()));
+        Order order = orderRepository.findById(request.getOrderId())
+                .orElseThrow(() -> new ResourceNotFoundException(
+                        "Order not found: " + request.getOrderId()));
 
-                assertStatus(order, OrderStatus.SEARCHING_COURIER);
+        assertStatus(order, OrderStatus.SEARCHING_COURIER);
 
-                Courier courier = courierRepository.findFirstByAvailableTrue().orElse(null);
-                if (courier == null) {
-                    log.info("No available couriers for order #{}", order.getId());
-                    return null;
-                }
+        Courier courier = courierRepository.findFirstByAvailableTrue().orElse(null);
+        if (courier == null) {
+            log.info("No available couriers for order #{}", order.getId());
+            return;
+        }
 
-                assignCourier(order, courier);
-                return null;
-            } catch (Exception e) {
-                status.setRollbackOnly();
-                throw e;
-            }
-        });
+        assignCourier(order, courier);
     }
 
     private void assignCourier(Order order, Courier courier) {
@@ -91,7 +74,11 @@ public class SearchCourierService {
                 .isRead(false)
                 .createdAt(LocalDateTime.now())
                 .build();
-        notificationEventPublisher.publish(notification);
+        try {
+            notificationEventPublisher.publish(notification);
+        } catch (Exception e) {
+            log.warn("Failed to publish courier notification for order #{}", order.getId(), e);
+        }
     }
 
     private void assertStatus(Order order, OrderStatus expected) {
