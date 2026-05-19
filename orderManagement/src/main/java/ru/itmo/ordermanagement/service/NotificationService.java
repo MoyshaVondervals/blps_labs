@@ -22,7 +22,6 @@ import ru.itmo.ordermanagement.service.kafka.NotificationEventPublisher;
 public class NotificationService {
 
     private final NotificationRepository notificationRepository;
-    private final SseEmitterService sseEmitterService;
     private final NotificationEventPublisher notificationEventPublisher;
 
     @Transactional(isolation = Isolation.READ_COMMITTED)

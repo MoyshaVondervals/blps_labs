@@ -37,6 +37,8 @@ spring:
 
   kafka:
     bootstrap-servers: localhost:29092
+    listener:
+      ack-mode: manual
     consumer:
       group-id: "notification-1"
       auto-offset-reset: earliest
@@ -60,6 +62,7 @@ spring:
             use:
               type:
                 headers: false
+      enable-auto-commit: false
 
 server:
   port: 8081

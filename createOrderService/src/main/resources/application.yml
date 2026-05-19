@@ -43,6 +43,8 @@ spring:
 
   kafka:
     bootstrap-servers: localhost:29092
+    listener:
+      ack-mode: manual
     consumer:
       group-id: "createOrder-1"
       auto-offset-reset: earliest
@@ -66,6 +68,7 @@ spring:
             use:
               type:
                 headers: false
+      enable-auto-commit: false
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer

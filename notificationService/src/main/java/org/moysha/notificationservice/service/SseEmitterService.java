@@ -79,6 +79,7 @@ public class SseEmitterService {
         for (SseEmitter dead : deadEmitters) {
             removeEmitter(key, dead);
         }
+//        throw new RuntimeException();
 
     }
 
