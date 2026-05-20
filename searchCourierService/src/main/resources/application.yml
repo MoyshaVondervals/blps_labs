@@ -36,6 +36,8 @@ spring:
 
   kafka:
     bootstrap-servers: localhost:29092
+    listener:
+      ack-mode: manual
     consumer:
       group-id: "searchCourier-1"
       auto-offset-reset: earliest
@@ -59,12 +61,13 @@ spring:
             use:
               type:
                 headers: false
+      enable-auto-commit: false
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
       transaction-id-prefix: search-courier-tx-
       properties:
-        acks: 1
+        acks: all
         spring.json.add.type.headers: false
 
 server:
@@ -79,4 +82,3 @@ springdoc:
 topic:
   search-courier: search-courier
   send-notification: send-notification
-

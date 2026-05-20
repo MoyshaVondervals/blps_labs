@@ -13,8 +13,11 @@ import ru.itmo.ordermanagement.model.entity.Notification;
 import ru.itmo.ordermanagement.model.entity.Order;
 import ru.itmo.ordermanagement.model.enums.RecipientType;
 import ru.itmo.ordermanagement.repository.NotificationRepository;
-import ru.itmo.ordermanagement.service.kafka.NotificationEventPublisher;
+import ru.itmo.ordermanagement.service.outbox.OutboxEventService;
+import org.springframework.beans.factory.annotation.Value;
 
+import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -22,22 +25,27 @@ import ru.itmo.ordermanagement.service.kafka.NotificationEventPublisher;
 public class NotificationService {
 
     private final NotificationRepository notificationRepository;
-    private final SseEmitterService sseEmitterService;
-    private final NotificationEventPublisher notificationEventPublisher;
+    private final OutboxEventService outboxEventService;
+
+    @Value("${topic.send-notification}")
+    private String sendNotificationTopic;
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public NotificationEvent send(RecipientType recipientType, Long recipientId,
                              Order order, String message) {
         NotificationEvent notification = NotificationEvent.builder()
+                .eventId(UUID.randomUUID())
                 .recipientType(recipientType)
                 .recipientId(recipientId)
                 .orderId(order.getId())
                 .message(message)
                 .isRead(false)
+                .createdAt(LocalDateTime.now())
                 .build();
-//        notification = notificationRepository.save(notification);
 
-        notificationEventPublisher.publish(notification);
+        String key = recipientType + ":" + recipientId;
+        outboxEventService.saveEvent("Order", order.getId(), "NotificationRequested",
+                sendNotificationTopic, key, notification);
 
         return notification;
     }

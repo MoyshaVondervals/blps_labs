@@ -6,6 +6,7 @@ import org.moysha.notificationservice.dto.NotificationEvent;
 import org.moysha.notificationservice.model.entity.Notification;
 import org.moysha.notificationservice.model.enums.RecipientType;
 import org.moysha.notificationservice.repository.NotificationRepository;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -53,7 +54,16 @@ public class SseEmitterService {
     @Transactional
     public void sendNotification(RecipientType recipientType, Long recipientId,
                                  NotificationEvent notificationEvent) {
+        if (notificationEvent.eventId() != null
+                && notificationRepository.existsByExternalEventId(notificationEvent.eventId())) {
+            log.info("Notification event {} already processed", notificationEvent.eventId());
+            return;
+        }
+
         Notification notification = saveNotification(mapNotification(notificationEvent));
+        if (notification == null) {
+            return;
+        }
 
         String key = buildKey(recipientType, recipientId);
         List<SseEmitter> recipientEmitters = emitters.get(key);
@@ -84,7 +94,15 @@ public class SseEmitterService {
 
 
     private Notification saveNotification(Notification notification) {
-        return notificationRepository.save(notification);
+        try {
+            return notificationRepository.saveAndFlush(notification);
+        } catch (DataIntegrityViolationException e) {
+            if (notification.getExternalEventId() != null) {
+                log.info("Notification event {} already processed", notification.getExternalEventId());
+                return null;
+            }
+            throw e;
+        }
     }
 
     private Notification mapNotification(NotificationEvent notificationEvent) {
@@ -92,6 +110,7 @@ public class SseEmitterService {
                 .recipientType(notificationEvent.recipientType())
                 .recipientId(notificationEvent.recipientId())
                 .orderId(notificationEvent.orderId())
+                .externalEventId(notificationEvent.eventId())
                 .message(notificationEvent.message())
                 .isRead(notificationEvent.isRead())
                 .build();

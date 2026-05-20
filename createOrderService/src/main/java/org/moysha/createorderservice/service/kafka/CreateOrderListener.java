@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.moysha.createorderservice.dto.CreateOrderRequest;
 import org.moysha.createorderservice.service.CreateOrderService;
 import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.stereotype.Service;
 
 @Slf4j
@@ -19,9 +20,10 @@ public class CreateOrderListener {
             groupId = "${spring.kafka.consumer.group-id}",
             properties = {"spring.json.trusted.packages=*"}
     )
-    public void onMessage(CreateOrderRequest request) {
+    public void onMessage(CreateOrderRequest request, Acknowledgment ack) {
         createOrderService.createOrder(request);
         log.info("Create order request processed for customer #{}", request.getCustomerId());
+        ack.acknowledge();
     }
 }
 
