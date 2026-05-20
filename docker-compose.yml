@@ -197,6 +197,7 @@ services:
       DB_USER: postgres
       DB_PASSWORD: postgres
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      NOTIFICATION_SERVICE_URL: http://notification-service:8081
 
   search-courier-service:
     build:

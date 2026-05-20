@@ -5,10 +5,12 @@ import lombok.Data;
 import ru.itmo.ordermanagement.model.enums.RecipientType;
 
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Data
 @Builder
 public class NotificationEvent {
+    private UUID eventId;
     private Long id;
     private RecipientType recipientType;
     private Long recipientId;

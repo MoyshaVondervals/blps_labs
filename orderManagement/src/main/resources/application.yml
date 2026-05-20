@@ -51,7 +51,7 @@ spring:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
       properties:
-        acks: 1
+        acks: all
         spring.json.add.type.headers: false
 
 server:
@@ -64,6 +64,9 @@ springdoc:
     path: /swagger-ui.html
 
 app:
+  outbox:
+    demo-review-rollback: ${OUTBOX_DEMO_REVIEW_ROLLBACK:false}
+    demo-rollback-operation: ${OUTBOX_DEMO_ROLLBACK_OPERATION:}
   seller-reaction-timeout-minutes: 10
   courier-arrival-timeout-minutes: 30
   notification-service:

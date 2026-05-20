@@ -8,7 +8,6 @@ import org.moysha.notificationservice.dto.NotificationEvent;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 @Slf4j
 @Service
@@ -20,7 +19,6 @@ public class KafkaNotificationService {
     private final SseEmitterService sseEmitterService;
 
 
-    @Transactional
     @KafkaListener(
             topics = TOPIC,
             groupId = GROUP_ID,

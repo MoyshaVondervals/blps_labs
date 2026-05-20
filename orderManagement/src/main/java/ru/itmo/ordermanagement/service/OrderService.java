@@ -21,7 +21,7 @@ import ru.itmo.ordermanagement.model.entity.*;
 import ru.itmo.ordermanagement.model.enums.OrderStatus;
 import ru.itmo.ordermanagement.repository.*;
 import ru.itmo.ordermanagement.service.kafka.CreateOrderPublisher;
-import ru.itmo.ordermanagement.service.kafka.SearchCourierPublisher;
+import ru.itmo.ordermanagement.service.outbox.OutboxEventService;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -43,80 +43,31 @@ public class OrderService {
     private final OrderBatchTransactionService orderBatchTransactionService;
     private final DolibarrInvoiceService dolibarrInvoiceService;
     private final CreateOrderPublisher createOrderPublisher;
-    private final SearchCourierPublisher searchCourierPublisher;
+    private final OutboxEventService outboxEventService;
+    private final NotificationServiceAvailabilityClient notificationServiceAvailabilityClient;
 
     private final PlatformTransactionManager txManager;
 
-    /*
-    @PreAuthorize("hasAuthority('" + CREATE_ORDER + "')")
-    public OrderResponse createOrder(CreateOrderRequest request) {
-        TransactionTemplate tx = new TransactionTemplate(txManager);
-        tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRED);
-        tx.setTimeout(30);
-        tx.setIsolationLevel(TransactionDefinition.ISOLATION_SERIALIZABLE);
-        return tx.execute(status -> {
-            try {
-                Customer customer = customerRepository.findById(request.getCustomerId())
-                        .orElseThrow(() -> new ResourceNotFoundException(
-                                "Customer not found: " + request.getCustomerId()));
+    @org.springframework.beans.factory.annotation.Value("${topic.search-courier}")
+    private String searchCourierTopic;
 
-                Seller seller = sellerRepository.findById(request.getSellerId())
-                        .orElseThrow(() -> new ResourceNotFoundException(
-                                "Seller not found: " + request.getSellerId()));
-                Order order = Order.builder()
-                        .customer(customer)
-                        .seller(seller)
-                        .status(OrderStatus.IN_PROCESSING)
-                        .build();
-                for (OrderItemDto itemDto : request.getItems()) {
-                    Product product = productRepository.findById(itemDto.getProductId())
-                            .orElseThrow(() -> new ResourceNotFoundException(
-                                    "Product not found: " + itemDto.getProductId()));
+    @org.springframework.beans.factory.annotation.Value("${app.outbox.demo-review-rollback:false}")
+    private boolean outboxDemoReviewRollback;
 
-                    if (!product.getSeller().getId().equals(seller.getId())) {
-                        throw new InvalidOrderStateException(
-                                "Product #" + product.getId() + " does not belong to seller #" + seller.getId());
-                    }
-                    if (!product.getAvailable()) {
-                        throw new InvalidOrderStateException(
-                                "Product '" + product.getName() + "' is not available");
-                    }
-
-                    OrderItem item = OrderItem.builder()
-                            .product(product)
-                            .productName(product.getName())
-                            .quantity(itemDto.getQuantity())
-                            .price(product.getPrice())
-                            .build();
-                    order.addItem(item);
-                }
-                order.recalculateTotal();
-                order.setSellerNotifiedAt(LocalDateTime.now());
-
-                order = orderRepository.save(order);
-
-                notificationService.notifySellerNewOrder(order);
-                notificationService.notifyCustomerStatusChanged(order);
-
-                log.info("Order #{} created, status: IN_PROCESSING", order.getId());
-                return toResponse(order);
-
-            } catch (Exception e) {
-                status.setRollbackOnly();
-                throw e;
-            }
-        });
-    }
-    */
+    @org.springframework.beans.factory.annotation.Value("${app.outbox.demo-rollback-operation:}")
+    private String outboxDemoRollbackOperation;
 
     @PreAuthorize("hasAuthority('" + CREATE_ORDER + "')")
     public void createOrder(CreateOrderRequest request) {
+        if (!notificationServiceAvailabilityClient.isAvailable()) {
+            throw new InvalidOrderStateException("Notification service is unavailable");
+        }
+
         createOrderPublisher.publish(request);
         log.info("Create order request published for customer #{}", request.getCustomerId());
     }
 
 
-    //    @Transactional(isolation = Isolation.REPEATABLE_READ)
     @PreAuthorize("hasAnyAuthority('" + CHANGE_ORDER_STATUS + "', '" + CANCEL_ORDER + "')")
     public OrderResponse reviewOrder(Long orderId, ReviewOrderRequest request) {
         TransactionTemplate tx = new TransactionTemplate(txManager);
@@ -151,6 +102,11 @@ public class OrderService {
                     log.info("Order #{} cancelled by seller: {}", orderId, order.getCancelReason());
                 }
 
+                if (outboxDemoReviewRollback) {
+                    throw new InvalidOrderStateException("Outbox review demo rollback");
+                }
+                rollbackIfDemo("reviewOrder");
+
                 return toResponse(order);
 
             } catch (Exception e) {
@@ -171,6 +127,7 @@ public class OrderService {
         order = orderRepository.save(order);
 
         notificationService.notifyCustomerStatusChanged(order);
+        rollbackIfDemo("assembleOrder");
         log.info("Order #{} assembled, status: ASSEMBLING", orderId);
         return toResponse(order);
     }
@@ -184,40 +141,13 @@ public class OrderService {
         order.setStatus(OrderStatus.SEARCHING_COURIER);
         order = orderRepository.save(order);
 
-        searchCourierPublisher.publish(new SearchCourierRequest(orderId));
-        log.info("Order #{} moved to SEARCHING_COURIER and published to search-courier topic", orderId);
+        outboxEventService.saveEvent("Order", order.getId(), "SearchCourierRequested",
+                searchCourierTopic, String.valueOf(orderId), new SearchCourierRequest(orderId));
+        rollbackIfDemo("searchCourier");
+        log.info("Order #{} moved to SEARCHING_COURIER and queued to outbox", orderId);
 
         return toResponse(order);
     }
-
-    //    @Transactional(isolation = Isolation.SERIALIZABLE)
-//    private void assignCourier(Order order, Courier courier) {
-//        TransactionTemplate tx = new TransactionTemplate(txManager);
-//        tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_MANDATORY); //тут мандатори кароч потому что вызываем
-//        tx.setTimeout(30);
-//        tx.setIsolationLevel(TransactionDefinition.ISOLATION_SERIALIZABLE);
-//        tx.execute(status -> {
-//            try {
-//                courier.setAvailable(false);
-//                courierRepository.save(courier);
-//
-//                order.setCourier(courier);
-//                order.setStatus(OrderStatus.AWAITING_COURIER);
-//                order.setCourierAssignedAt(LocalDateTime.now());
-//                order.setCourierNotifiedAt(LocalDateTime.now());
-//                orderRepository.save(order);
-//
-//                notificationService.notifyCourierNewDelivery(order);
-//                log.info("Order #{}: courier #{} assigned, status: AWAITING_COURIER",
-//                        order.getId(), courier.getId());
-//            } catch (Exception e) {
-//                status.setRollbackOnly();
-//                throw e;
-//            }
-//            return null;
-//        });
-//
-//    }
 
     @Transactional(isolation = Isolation.REPEATABLE_READ)
     @PreAuthorize("hasAuthority('" + ACCEPT_DELIVERY + "')")
@@ -232,11 +162,11 @@ public class OrderService {
 
         notificationService.notifySellerCourierAccepted(order);
         notificationService.notifyCustomerStatusChanged(order);
+        rollbackIfDemo("courierAcceptDelivery");
         log.info("Order #{}: courier #{} accepted delivery request", orderId, courierId);
         return toResponse(order);
     }
 
-    //    @Transactional(isolation = Isolation.REPEATABLE_READ)
     @PreAuthorize("hasAuthority('" + GET_ORDER_TO_DELIVERY + "')")
     public OrderResponse courierArrived(Long orderId, Long courierId) {
         TransactionTemplate tx = new TransactionTemplate(txManager);
@@ -263,6 +193,7 @@ public class OrderService {
                 order = orderRepository.save(order);
 
                 notificationService.notifyCustomerStatusChanged(order);
+                rollbackIfDemo("courierArrived");
                 log.info("Order #{}: courier arrived, status: IN_DELIVERY", orderId);
                 return toResponse(order);
 
@@ -274,7 +205,6 @@ public class OrderService {
 
     }
 
-    //    @Transactional(isolation = Isolation.REPEATABLE_READ)
     @PreAuthorize("hasAuthority('" + DELIVER_ORDER + "')")
     public OrderResponse deliverOrder(Long orderId, Long courierId) {
         TransactionTemplate tx = new TransactionTemplate(txManager);
@@ -301,6 +231,7 @@ public class OrderService {
 
                 notificationService.notifyCustomerStatusChanged(order);
                 notificationService.notifySellerOrderDelivered(order);
+                rollbackIfDemo("deliverOrder");
                 log.info("Order #{}: delivered by courier #{}, status: DELIVERED", orderId, courierId);
                 return toResponse(order);
 
@@ -392,6 +323,12 @@ public class OrderService {
             throw new InvalidOrderStateException(
                     String.format("Order #%d has status %s, expected %s",
                             order.getId(), order.getStatus(), expected));
+        }
+    }
+
+    private void rollbackIfDemo(String operation) {
+        if (operation.equals(outboxDemoRollbackOperation)) {
+            throw new InvalidOrderStateException("Outbox demo rollback: " + operation);
         }
     }
 

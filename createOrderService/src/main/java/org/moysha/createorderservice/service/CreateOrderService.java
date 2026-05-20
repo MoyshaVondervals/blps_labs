@@ -12,7 +12,8 @@ import org.moysha.createorderservice.model.entity.*;
 import org.moysha.createorderservice.model.enums.OrderStatus;
 import org.moysha.createorderservice.model.enums.RecipientType;
 import org.moysha.createorderservice.repository.*;
-import org.moysha.createorderservice.service.kafka.NotificationEventPublisher;
+import org.moysha.createorderservice.service.outbox.OutboxEventService;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -20,6 +21,7 @@ import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.LocalDateTime;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
@@ -30,12 +32,23 @@ public class CreateOrderService {
     private final CustomerRepository customerRepository;
     private final SellerRepository sellerRepository;
     private final ProductRepository productRepository;
-    private final NotificationEventPublisher notificationEventPublisher;
+    private final OutboxEventService outboxEventService;
+    private final NotificationServiceAvailabilityClient notificationServiceAvailabilityClient;
+
+    @Value("${topic.send-notification}")
+    private String sendNotificationTopic;
+
+    @Value("${app.outbox.demo-rollback:false}")
+    private boolean outboxDemoRollback;
 
     @Qualifier("chainedTransactionManager")
     private final PlatformTransactionManager txManager;
 
     public OrderResponse createOrder(CreateOrderRequest request) {
+        if (!notificationServiceAvailabilityClient.isAvailable()) {
+            throw new InvalidOrderStateException("Notification service is unavailable");
+        }
+
         TransactionTemplate tx = new TransactionTemplate(txManager);
         tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRED);
         tx.setTimeout(30);
@@ -84,6 +97,10 @@ public class CreateOrderService {
                 notifySellerNewOrder(order);
                 notifyCustomerStatusChanged(order);
 
+                if (outboxDemoRollback) {
+                    throw new InvalidOrderStateException("Outbox demo rollback");
+                }
+
                 return toResponse(order);
             } catch (Exception e) {
                 status.setRollbackOnly();
@@ -106,6 +123,7 @@ public class CreateOrderService {
 
     private void publishNotification(RecipientType recipientType, Long recipientId, Order order, String message) {
         NotificationEvent notification = NotificationEvent.builder()
+                .eventId(UUID.randomUUID())
                 .recipientType(recipientType)
                 .recipientId(recipientId)
                 .orderId(order.getId())
@@ -113,7 +131,9 @@ public class CreateOrderService {
                 .isRead(false)
                 .createdAt(LocalDateTime.now())
                 .build();
-        notificationEventPublisher.publish(notification);
+        String key = recipientType + ":" + recipientId;
+        outboxEventService.saveEvent("Order", order.getId(), "NotificationRequested",
+                sendNotificationTopic, key, notification);
     }
 
     private String translateStatus(String status) {

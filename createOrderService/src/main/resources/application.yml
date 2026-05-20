@@ -89,6 +89,10 @@ springdoc:
     path: /swagger-ui.html
 
 app:
+  notification-service:
+    base-url: ${NOTIFICATION_SERVICE_URL:http://localhost:8081}
+  outbox:
+    demo-rollback: ${OUTBOX_DEMO_ROLLBACK:false}
   seller-reaction-timeout-minutes: 10
   courier-arrival-timeout-minutes: 30
 

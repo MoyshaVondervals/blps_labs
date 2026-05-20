@@ -6,9 +6,12 @@ import org.moysha.notificationservice.model.enums.RecipientType;
 
 
 import java.time.LocalDateTime;
+import java.util.UUID;
 
 @Entity
-@Table(name = "notifications")
+@Table(name = "notifications", uniqueConstraints = {
+        @UniqueConstraint(name = "uk_notifications_external_event_id", columnNames = "external_event_id")
+})
 @Getter @Setter
 @NoArgsConstructor @AllArgsConstructor
 @Builder
@@ -28,6 +31,9 @@ public class Notification {
 
     @Column(name = "order_id", nullable = false)
     private Long orderId;
+
+    @Column(name = "external_event_id")
+    private UUID externalEventId;
 
     @Column(nullable = false, columnDefinition = "TEXT")
     private String message;
