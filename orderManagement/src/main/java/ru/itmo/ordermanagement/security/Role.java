@@ -25,6 +25,7 @@ public enum Role {
     )),
     COURIER(Set.of(
             Privilege.VIEW_DELIVERY_ORDERS,
+            Privilege.ACCEPT_DELIVERY,
             Privilege.DELIVER_ORDER,
             Privilege.GET_ORDER_TO_DELIVERY
     )),
