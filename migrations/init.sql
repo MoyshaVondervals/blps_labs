@@ -51,8 +51,11 @@ CREATE TABLE IF NOT EXISTS orders (
     dolibarr_invoice_id     BIGINT,
     dolibarr_invoice_ref    VARCHAR(255),
     invoice_created_at      TIMESTAMP,
-    cancel_reason           VARCHAR(500)
+    cancel_reason           VARCHAR(500),
+    process_instance_id     VARCHAR(64)
 );
+
+ALTER TABLE orders ADD COLUMN IF NOT EXISTS process_instance_id VARCHAR(64);
 
 CREATE TABLE IF NOT EXISTS order_items (
     id              BIGSERIAL PRIMARY KEY,
@@ -100,6 +103,7 @@ CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
 CREATE INDEX IF NOT EXISTS idx_orders_customer ON orders(customer_id);
 CREATE INDEX IF NOT EXISTS idx_orders_seller ON orders(seller_id);
 CREATE INDEX IF NOT EXISTS idx_orders_courier ON orders(courier_id);
+CREATE INDEX IF NOT EXISTS idx_orders_process_instance_id ON orders(process_instance_id);
 CREATE INDEX IF NOT EXISTS idx_notifications_recipient ON notifications(recipient_type, recipient_id);
 CREATE INDEX IF NOT EXISTS idx_outbox_events_pending ON outbox_events(source_service, status, next_attempt_at, created_at);
 CREATE INDEX IF NOT EXISTS idx_order_items_order ON order_items(order_id);

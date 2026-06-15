@@ -19,6 +19,8 @@ public class DolibarrManagedConnectionFactory implements ManagedConnectionFactor
 
     private final String baseUrl;
     private final String apiKey;
+    private final String login;
+    private final String password;
     private final BigDecimal defaultVatRate;
     private final Duration connectTimeout;
     private final Duration readTimeout;
@@ -29,6 +31,8 @@ public class DolibarrManagedConnectionFactory implements ManagedConnectionFactor
     public DolibarrManagedConnectionFactory(DolibarrProperties properties) {
         this.baseUrl = normalizeBaseUrl(properties.getBaseUrl());
         this.apiKey = properties.getApiKey();
+        this.login = properties.getLogin();
+        this.password = properties.getPassword();
         this.defaultVatRate = properties.getDefaultVatRate();
         this.connectTimeout = properties.getConnectTimeout();
         this.readTimeout = properties.getReadTimeout();
@@ -51,12 +55,15 @@ public class DolibarrManagedConnectionFactory implements ManagedConnectionFactor
         if (baseUrl == null || baseUrl.isBlank()) {
             throw new ResourceException("Dolibarr baseUrl is not configured");
         }
-        if (apiKey == null || apiKey.isBlank()) {
-            throw new ResourceException("Dolibarr apiKey is not configured");
+        if ((apiKey == null || apiKey.isBlank()) && (login == null || login.isBlank()
+                || password == null || password.isBlank())) {
+            throw new ResourceException("Dolibarr apiKey or login/password is not configured");
         }
         return new DolibarrManagedConnection(
                 baseUrl,
                 apiKey,
+                login,
+                password,
                 defaultVatRate,
                 connectTimeout,
                 readTimeout,

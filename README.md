@@ -1,9 +1,97 @@
-## Docker запуск (приложение + PostgreSQL)
+## Docker запуск (Camunda BPM + приложение + PostgreSQL)
 
 ```zsh
-cd /Users/moyshavondervals/IdeaProjects/blps_labs/lab1
+cd /Users/moyshavondervals/IdeaProjects/blps_labs
 docker compose up -d --build
 ```
+
+Camunda Tasklist:
+
+```text
+http://localhost:8080/camunda
+```
+
+Логины синхронизированы с `users.xml`:
+
+```text
+moysha / 2281337
+seller / 2281337
+customer / 2281337
+courier / 2281337
+```
+
+Основной процесс: `Order delivery process`.
+
+В Tasklist можно стартовать процесс через generated start form:
+
+```json
+{
+  "customerId": 1,
+  "sellerId": 1,
+  "itemsJson": "[{\"productId\":1,\"quantity\":2}]"
+}
+```
+
+## Camunda demo
+
+Camunda BPM встроена в `orderManagement` в embedded mode. Исполняемый процесс описан в BPMN 2.0:
+
+```text
+orderManagement/src/main/resources/processes/order-process.bpmn
+```
+
+Этот файл можно открыть в BPMN.io, а после запуска приложения диаграмма доступна в Camunda Cockpit:
+
+```text
+http://localhost:8080/camunda/app/cockpit
+```
+
+Пользовательские задачи выполняются в Tasklist через Camunda generated task forms:
+
+```text
+http://localhost:8080/camunda/app/tasklist
+```
+
+Роли процесса:
+
+```text
+CUSTOMER -> создание заказа через REST/API
+SELLER   -> Проверить заказ, Собрать заказ, Искать курьера
+COURIER  -> Курьер принял доставку, Курьер пришел в заведение, Доставить заказ клиенту
+ADMIN    -> просмотр Cockpit и администрирование
+```
+
+Сценарий для демонстрации:
+
+1. Создать заказ через `POST /api/orders` от `customer`.
+2. Войти как `seller` и выполнить задачу `Проверить заказ`, отметив `Можно выполнить заказ`.
+3. Выполнить задачи `Собрать заказ` и `Искать курьера`.
+4. После асинхронного назначения курьера войти как `courier`.
+5. Выполнить задачи `Курьер принял доставку`, `Курьер пришел в заведение`, `Доставить заказ клиенту`.
+6. В Cockpit показать завершенный путь процесса.
+
+Асинхронные подсистемы интегрированы через Kafka-адаптеры и BPMN message events:
+
+```text
+create-order      -> createOrderService -> order-created
+search-courier    -> searchCourierService -> courier-assigned
+send-notification -> notificationService
+```
+
+Периодические и отложенные действия процесса описаны BPMN timer boundary events:
+
+```text
+Таймаут продавца       -> отмена заказа
+Курьер задерживается   -> отметка задержки доставки
+```
+
+Если в Tasklist остались старые задачи `Review order` от прежнего process key `order-process`, их можно удалить только в локальном Docker-окружении:
+
+```zsh
+bash scripts/cleanup-old-camunda-process.sh
+```
+
+Скрипт удаляет только obsolete process definitions с key `order-process` и не трогает актуальный процесс `orderProcess`.
 
 Проверка API (Basic Auth из `users.xml`):
 
@@ -22,7 +110,7 @@ password: postgres
 Остановка:
 
 ```zsh
-cd /Users/moyshavondervals/IdeaProjects/blps_labs/lab1
+cd /Users/moyshavondervals/IdeaProjects/blps_labs
 docker compose down
 ```
 
@@ -103,8 +191,10 @@ curl "http://localhost:8080/api/products/seller/1?page=0&size=1&sort=id,asc"
 # посмотреть доступные товары
 curl http://localhost:8080/api/products/seller/1/available
 
-# создать заказ
+# создать заказ через REST: теперь стартует Camunda process, а создание заказа публикуется в Kafka из BPMN service task
 curl -X POST http://localhost:8080/api/orders \
+  -u customer:2281337 \
+  -H "Content-Type: application/json" \
   -d '{"customerId": 1, "sellerId": 1, "items": [{"productId": 1, "quantity": 2}]}'
 
 #  продавец принимает заказ
@@ -139,9 +229,19 @@ curl -N http://localhost:8080/api/sse/notifications/SELLER/1
 curl -N http://localhost:8080/api/sse/notifications/COURIER/1
 ```
 
-## Kafka: подписка на топик уведомлений
+## Kafka: ключевые топики процесса
 
-Если нужно отладить поток напрямую, можно подписаться на Kafka-топик.
+Camunda orchestration использует Kafka как адаптер для асинхронных подсистем:
+
+```text
+create-order       orderManagement -> createOrderService
+order-created      createOrderService -> orderManagement, корреляция BPMN OrderCreated
+search-courier     orderManagement -> searchCourierService
+courier-assigned   searchCourierService -> orderManagement, корреляция BPMN CourierAssigned
+send-notification  outbox -> notificationService
+```
+
+Если нужно отладить поток напрямую, можно подписаться на Kafka-топик:
 
 ```zsh
 kafka-console-consumer --bootstrap-server localhost:29092 --topic send-notification --from-beginning
@@ -179,3 +279,25 @@ docker compose -f docker-compose.erpnext.yml down
 cd /Users/moyshavondervals/IdeaProjects/blps_labs
 docker compose -f docker-compose.erpnext.yml down -v
 ```
+
+
+
+
+
+- Cockpit (мониторинг процессов): http://localhost:8080/camunda/app/cockpit
+- Tasklist (пользовательские задачи с формами): http://localhost:8080/camunda/app/tasklist
+- Admin (управление пользователями): http://localhost:8080/camunda/app/admin
+
+Логин/пароль — из CamundaIdentityConfig.java:
+
+┌──────────────┬─────────┬──────────┐                                                                                                                                    
+│ Пользователь │ Пароль  │   Роль   │                                                                                                                                    
+├──────────────┼─────────┼──────────┤                                                                                                                                    
+│ moysha       │ 2281337 │ ADMIN    │                                                                                                                                    
+├──────────────┼─────────┼──────────┤                                                                                                                                    
+│ seller       │ 2281337 │ SELLER   │                                                                                                                                    
+├──────────────┼─────────┼──────────┤                                                                                                                                    
+│ courier      │ 2281337 │ COURIER  │                                                                                                                                    
+├──────────────┼─────────┼──────────┤                                                                                                                                    
+│ customer     │ 2281337 │ CUSTOMER │                                                                                                                                    
+└──────────────┴─────────┴──────────┘                        

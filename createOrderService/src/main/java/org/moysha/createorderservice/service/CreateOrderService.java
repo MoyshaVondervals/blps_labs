@@ -3,6 +3,7 @@ package org.moysha.createorderservice.service;
 import lombok.RequiredArgsConstructor;
 import org.moysha.createorderservice.dto.CreateOrderRequest;
 import org.moysha.createorderservice.dto.NotificationEvent;
+import org.moysha.createorderservice.dto.OrderCreatedEvent;
 import org.moysha.createorderservice.dto.OrderItemDto;
 import org.moysha.createorderservice.dto.OrderItemResponse;
 import org.moysha.createorderservice.dto.OrderResponse;
@@ -13,6 +14,7 @@ import org.moysha.createorderservice.model.enums.OrderStatus;
 import org.moysha.createorderservice.model.enums.RecipientType;
 import org.moysha.createorderservice.repository.*;
 import org.moysha.createorderservice.service.outbox.OutboxEventService;
+import org.moysha.createorderservice.service.kafka.OrderCreatedEventPublisher;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
@@ -34,6 +36,7 @@ public class CreateOrderService {
     private final ProductRepository productRepository;
     private final OutboxEventService outboxEventService;
     private final NotificationServiceAvailabilityClient notificationServiceAvailabilityClient;
+    private final OrderCreatedEventPublisher orderCreatedEventPublisher;
 
     @Value("${topic.send-notification}")
     private String sendNotificationTopic;
@@ -100,6 +103,13 @@ public class CreateOrderService {
                 if (outboxDemoRollback) {
                     throw new InvalidOrderStateException("Outbox demo rollback");
                 }
+
+                orderCreatedEventPublisher.publish(new OrderCreatedEvent(
+                        request.getRequestId(),
+                        order.getId(),
+                        order.getCustomer().getId(),
+                        order.getSeller().getId()
+                ));
 
                 return toResponse(order);
             } catch (Exception e) {

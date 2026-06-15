@@ -2,6 +2,7 @@ package ru.itmo.ordermanagement.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.ProviderManager;
@@ -30,12 +31,15 @@ import java.util.Set;
 public class SecurityConfig {
 
     @Bean
+    @Order(1)
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
+                .securityMatcher("/api/**", "/api-docs/**", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html")
                 .csrf(csrf -> csrf.disable())
                 .authorizeHttpRequests(authz -> authz
                         .anyRequest()
                         .authenticated())
+                .formLogin(Customizer.withDefaults())
                 .httpBasic(Customizer.withDefaults());
 
         return http.build();

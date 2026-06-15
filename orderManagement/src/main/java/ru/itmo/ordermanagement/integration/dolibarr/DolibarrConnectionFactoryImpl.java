@@ -16,7 +16,10 @@ public class DolibarrConnectionFactoryImpl implements DolibarrConnectionFactory 
         try {
             return (DolibarrConnection) connectionManager.allocateConnection(managedConnectionFactory, null);
         } catch (ResourceException e) {
-            throw new DolibarrInvoiceException("Cannot allocate Dolibarr JCA connection", e);
+            String detail = e.getMessage() == null || e.getMessage().isBlank()
+                    ? "unknown ResourceException"
+                    : e.getMessage();
+            throw new DolibarrInvoiceException("Cannot allocate Dolibarr JCA connection: " + detail, e);
         }
     }
 }

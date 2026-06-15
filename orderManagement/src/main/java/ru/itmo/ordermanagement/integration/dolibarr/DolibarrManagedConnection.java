@@ -16,6 +16,8 @@ import java.time.Duration;
 public class DolibarrManagedConnection implements ManagedConnection {
     private final String baseUrl;
     private final String apiKey;
+    private final String login;
+    private final String password;
     private final BigDecimal defaultVatRate;
     private final Duration connectTimeout;
     private final Duration readTimeout;
@@ -24,12 +26,16 @@ public class DolibarrManagedConnection implements ManagedConnection {
 
     public DolibarrManagedConnection(String baseUrl,
                                      String apiKey,
+                                     String login,
+                                     String password,
                                      BigDecimal defaultVatRate,
                                      Duration connectTimeout,
                                      Duration readTimeout,
                                      boolean validateOnCreate) {
         this.baseUrl = baseUrl;
         this.apiKey = apiKey;
+        this.login = login;
+        this.password = password;
         this.defaultVatRate = defaultVatRate;
         this.connectTimeout = connectTimeout;
         this.readTimeout = readTimeout;
@@ -41,6 +47,8 @@ public class DolibarrManagedConnection implements ManagedConnection {
         return new DolibarrConnectionImpl(
                 baseUrl,
                 apiKey,
+                login,
+                password,
                 defaultVatRate,
                 connectTimeout,
                 readTimeout,

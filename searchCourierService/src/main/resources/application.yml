@@ -82,3 +82,4 @@ springdoc:
 topic:
   search-courier: search-courier
   send-notification: send-notification
+  courier-assigned: courier-assigned

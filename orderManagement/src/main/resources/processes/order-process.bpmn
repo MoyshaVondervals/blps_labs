@@ -1,0 +1,394 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:camunda="http://camunda.org/schema/1.0/bpmn"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  xmlns:dc="http://www.omg.org/spec/DD/20100524/DC"
+                  xmlns:di="http://www.omg.org/spec/DD/20100524/DI"
+                  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                  id="Definitions_OrderProcess"
+                  targetNamespace="http://itmo.ru/blps/order-management">
+
+  <bpmn:message id="Message_OrderCreated" name="OrderCreated"/>
+  <bpmn:message id="Message_CourierAssigned" name="CourierAssigned"/>
+
+  <bpmn:process id="orderProcess" name="Order delivery process" isExecutable="true" camunda:historyTimeToLive="180">
+    <bpmn:startEvent id="startCreateOrder" name="Создать заказ">
+      <bpmn:extensionElements>
+        <camunda:formData>
+          <camunda:formField id="customerId" label="ID покупателя" type="long">
+            <camunda:validation>
+              <camunda:constraint name="required"/>
+            </camunda:validation>
+          </camunda:formField>
+          <camunda:formField id="sellerId" label="ID продавца" type="long">
+            <camunda:validation>
+              <camunda:constraint name="required"/>
+            </camunda:validation>
+          </camunda:formField>
+          <camunda:formField id="itemsJson" label="Позиции заказа в JSON" type="string">
+            <camunda:properties>
+              <camunda:property id="placeholder" value="[{&quot;productId&quot;:1,&quot;quantity&quot;:2}]"/>
+            </camunda:properties>
+            <camunda:validation>
+              <camunda:constraint name="required"/>
+            </camunda:validation>
+          </camunda:formField>
+        </camunda:formData>
+      </bpmn:extensionElements>
+      <bpmn:outgoing>Flow_Start_PublishCreateOrder</bpmn:outgoing>
+    </bpmn:startEvent>
+
+    <bpmn:serviceTask id="publishCreateOrderTask" name="Опубликовать создание заказа"
+                      camunda:delegateExpression="${publishCreateOrderDelegate}">
+      <bpmn:incoming>Flow_Start_PublishCreateOrder</bpmn:incoming>
+      <bpmn:outgoing>Flow_PublishCreateOrder_WaitCreated</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:intermediateCatchEvent id="waitOrderCreated" name="Заказ создан асинхронно">
+      <bpmn:incoming>Flow_PublishCreateOrder_WaitCreated</bpmn:incoming>
+      <bpmn:outgoing>Flow_WaitCreated_Review</bpmn:outgoing>
+      <bpmn:messageEventDefinition messageRef="Message_OrderCreated"/>
+    </bpmn:intermediateCatchEvent>
+
+    <bpmn:userTask id="reviewOrderTask" name="Проверить заказ" camunda:candidateGroups="SELLER">
+      <bpmn:extensionElements>
+        <camunda:formData>
+          <camunda:formField id="canFulfill" label="Можно выполнить заказ" type="boolean">
+            <camunda:validation>
+              <camunda:constraint name="required"/>
+            </camunda:validation>
+          </camunda:formField>
+          <camunda:formField id="cancelReason" label="Причина отмены" type="string"/>
+        </camunda:formData>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_WaitCreated_Review</bpmn:incoming>
+      <bpmn:outgoing>Flow_Review_ApplyReview</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:boundaryEvent id="sellerReviewTimeout" name="Таймаут продавца" attachedToRef="reviewOrderTask" cancelActivity="true">
+      <bpmn:outgoing>Flow_SellerTimeout_Cancel</bpmn:outgoing>
+      <bpmn:timerEventDefinition>
+        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">${sellerTimeoutDuration}</bpmn:timeDuration>
+      </bpmn:timerEventDefinition>
+    </bpmn:boundaryEvent>
+
+    <bpmn:serviceTask id="cancelSellerTimeoutTask" name="Отменить по таймауту продавца"
+                      camunda:delegateExpression="${cancelOrderBySellerTimeoutDelegate}">
+      <bpmn:incoming>Flow_SellerTimeout_Cancel</bpmn:incoming>
+      <bpmn:outgoing>Flow_Cancel_TimeoutEnd</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:serviceTask id="applyReviewTask" name="Применить решение продавца"
+                      camunda:delegateExpression="${reviewOrderDelegate}">
+      <bpmn:incoming>Flow_Review_ApplyReview</bpmn:incoming>
+      <bpmn:outgoing>Flow_ApplyReview_Gateway</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:exclusiveGateway id="reviewDecisionGateway" name="Заказ принят?">
+      <bpmn:incoming>Flow_ApplyReview_Gateway</bpmn:incoming>
+      <bpmn:outgoing>Flow_ReviewAccepted_Assemble</bpmn:outgoing>
+      <bpmn:outgoing>Flow_ReviewRejected_Cancelled</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+
+    <bpmn:userTask id="assembleOrderTask" name="Собрать заказ" camunda:candidateGroups="SELLER">
+      <bpmn:extensionElements>
+        <camunda:formData>
+          <camunda:formField id="assembled" label="Заказ собран" type="boolean"/>
+        </camunda:formData>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_ReviewAccepted_Assemble</bpmn:incoming>
+      <bpmn:outgoing>Flow_Assemble_ApplyAssemble</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:serviceTask id="applyAssembleTask" name="Обновить статус сборки"
+                      camunda:delegateExpression="${assembleOrderDelegate}">
+      <bpmn:incoming>Flow_Assemble_ApplyAssemble</bpmn:incoming>
+      <bpmn:outgoing>Flow_ApplyAssemble_Search</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:userTask id="searchCourierTask" name="Искать курьера" camunda:candidateGroups="SELLER">
+      <bpmn:extensionElements>
+        <camunda:formData>
+          <camunda:formField id="searchRequested" label="Начать поиск курьера" type="boolean"/>
+        </camunda:formData>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_ApplyAssemble_Search</bpmn:incoming>
+      <bpmn:outgoing>Flow_Search_ApplySearch</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:serviceTask id="applySearchCourierTask" name="Опубликовать поиск курьера"
+                      camunda:delegateExpression="${searchCourierDelegate}">
+      <bpmn:incoming>Flow_Search_ApplySearch</bpmn:incoming>
+      <bpmn:outgoing>Flow_ApplySearch_WaitCourier</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:intermediateCatchEvent id="waitCourierAssigned" name="Курьер назначен">
+      <bpmn:incoming>Flow_ApplySearch_WaitCourier</bpmn:incoming>
+      <bpmn:outgoing>Flow_WaitCourier_Accept</bpmn:outgoing>
+      <bpmn:messageEventDefinition messageRef="Message_CourierAssigned"/>
+    </bpmn:intermediateCatchEvent>
+
+    <bpmn:userTask id="acceptDeliveryTask" name="Курьер принял доставку" camunda:candidateGroups="COURIER">
+      <bpmn:extensionElements>
+        <camunda:formData>
+          <camunda:formField id="courierId" label="ID курьера" type="long">
+            <camunda:validation>
+              <camunda:constraint name="required"/>
+            </camunda:validation>
+          </camunda:formField>
+        </camunda:formData>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_WaitCourier_Accept</bpmn:incoming>
+      <bpmn:outgoing>Flow_Accept_ApplyAccept</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:serviceTask id="applyAcceptDeliveryTask" name="Зафиксировать принятие доставки"
+                      camunda:delegateExpression="${courierAcceptDeliveryDelegate}">
+      <bpmn:incoming>Flow_Accept_ApplyAccept</bpmn:incoming>
+      <bpmn:outgoing>Flow_ApplyAccept_Arrived</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:userTask id="courierArrivedTask" name="Курьер пришел в заведение" camunda:candidateGroups="COURIER">
+      <bpmn:extensionElements>
+        <camunda:formData>
+          <camunda:formField id="courierId" label="ID курьера" type="long">
+            <camunda:validation>
+              <camunda:constraint name="required"/>
+            </camunda:validation>
+          </camunda:formField>
+        </camunda:formData>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_ApplyAccept_Arrived</bpmn:incoming>
+      <bpmn:outgoing>Flow_Arrived_ApplyArrived</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:boundaryEvent id="courierArrivalTimeout" name="Курьер задерживается" attachedToRef="courierArrivedTask" cancelActivity="false">
+      <bpmn:outgoing>Flow_CourierTimeout_MarkDelayed</bpmn:outgoing>
+      <bpmn:timerEventDefinition>
+        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">${courierTimeoutDuration}</bpmn:timeDuration>
+      </bpmn:timerEventDefinition>
+    </bpmn:boundaryEvent>
+
+    <bpmn:serviceTask id="markDelayedTask" name="Пометить задержку"
+                      camunda:delegateExpression="${markDelayedByCourierTimeoutDelegate}">
+      <bpmn:incoming>Flow_CourierTimeout_MarkDelayed</bpmn:incoming>
+      <bpmn:outgoing>Flow_MarkDelayed_EndBranch</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:serviceTask id="applyCourierArrivedTask" name="Передать заказ курьеру"
+                      camunda:delegateExpression="${courierArrivedDelegate}">
+      <bpmn:incoming>Flow_Arrived_ApplyArrived</bpmn:incoming>
+      <bpmn:outgoing>Flow_ApplyArrived_Deliver</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:userTask id="deliverOrderTask" name="Доставить заказ клиенту" camunda:candidateGroups="COURIER">
+      <bpmn:extensionElements>
+        <camunda:formData>
+          <camunda:formField id="courierId" label="ID курьера" type="long">
+            <camunda:validation>
+              <camunda:constraint name="required"/>
+            </camunda:validation>
+          </camunda:formField>
+        </camunda:formData>
+      </bpmn:extensionElements>
+      <bpmn:incoming>Flow_ApplyArrived_Deliver</bpmn:incoming>
+      <bpmn:outgoing>Flow_Deliver_ApplyDeliver</bpmn:outgoing>
+    </bpmn:userTask>
+
+    <bpmn:serviceTask id="applyDeliverOrderTask" name="Зафиксировать доставку"
+                      camunda:delegateExpression="${deliverOrderDelegate}">
+      <bpmn:incoming>Flow_Deliver_ApplyDeliver</bpmn:incoming>
+      <bpmn:outgoing>Flow_ApplyDeliver_DeliveredEnd</bpmn:outgoing>
+    </bpmn:serviceTask>
+
+    <bpmn:endEvent id="cancelledEnd" name="Заказ отменен">
+      <bpmn:incoming>Flow_ReviewRejected_Cancelled</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:endEvent id="timeoutCancelledEnd" name="Отменен по таймауту">
+      <bpmn:incoming>Flow_Cancel_TimeoutEnd</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:endEvent id="delayedBranchEnd" name="Задержка отмечена">
+      <bpmn:incoming>Flow_MarkDelayed_EndBranch</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:endEvent id="deliveredEnd" name="Заказ доставлен">
+      <bpmn:incoming>Flow_ApplyDeliver_DeliveredEnd</bpmn:incoming>
+    </bpmn:endEvent>
+
+    <bpmn:sequenceFlow id="Flow_Start_PublishCreateOrder" sourceRef="startCreateOrder" targetRef="publishCreateOrderTask"/>
+    <bpmn:sequenceFlow id="Flow_PublishCreateOrder_WaitCreated" sourceRef="publishCreateOrderTask" targetRef="waitOrderCreated"/>
+    <bpmn:sequenceFlow id="Flow_WaitCreated_Review" sourceRef="waitOrderCreated" targetRef="reviewOrderTask"/>
+    <bpmn:sequenceFlow id="Flow_SellerTimeout_Cancel" sourceRef="sellerReviewTimeout" targetRef="cancelSellerTimeoutTask"/>
+    <bpmn:sequenceFlow id="Flow_Cancel_TimeoutEnd" sourceRef="cancelSellerTimeoutTask" targetRef="timeoutCancelledEnd"/>
+    <bpmn:sequenceFlow id="Flow_Review_ApplyReview" sourceRef="reviewOrderTask" targetRef="applyReviewTask"/>
+    <bpmn:sequenceFlow id="Flow_ApplyReview_Gateway" sourceRef="applyReviewTask" targetRef="reviewDecisionGateway"/>
+    <bpmn:sequenceFlow id="Flow_ReviewAccepted_Assemble" sourceRef="reviewDecisionGateway" targetRef="assembleOrderTask">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${canFulfill == true}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_ReviewRejected_Cancelled" sourceRef="reviewDecisionGateway" targetRef="cancelledEnd">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">${canFulfill == false}</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="Flow_Assemble_ApplyAssemble" sourceRef="assembleOrderTask" targetRef="applyAssembleTask"/>
+    <bpmn:sequenceFlow id="Flow_ApplyAssemble_Search" sourceRef="applyAssembleTask" targetRef="searchCourierTask"/>
+    <bpmn:sequenceFlow id="Flow_Search_ApplySearch" sourceRef="searchCourierTask" targetRef="applySearchCourierTask"/>
+    <bpmn:sequenceFlow id="Flow_ApplySearch_WaitCourier" sourceRef="applySearchCourierTask" targetRef="waitCourierAssigned"/>
+    <bpmn:sequenceFlow id="Flow_WaitCourier_Accept" sourceRef="waitCourierAssigned" targetRef="acceptDeliveryTask"/>
+    <bpmn:sequenceFlow id="Flow_Accept_ApplyAccept" sourceRef="acceptDeliveryTask" targetRef="applyAcceptDeliveryTask"/>
+    <bpmn:sequenceFlow id="Flow_ApplyAccept_Arrived" sourceRef="applyAcceptDeliveryTask" targetRef="courierArrivedTask"/>
+    <bpmn:sequenceFlow id="Flow_CourierTimeout_MarkDelayed" sourceRef="courierArrivalTimeout" targetRef="markDelayedTask"/>
+    <bpmn:sequenceFlow id="Flow_MarkDelayed_EndBranch" sourceRef="markDelayedTask" targetRef="delayedBranchEnd"/>
+    <bpmn:sequenceFlow id="Flow_Arrived_ApplyArrived" sourceRef="courierArrivedTask" targetRef="applyCourierArrivedTask"/>
+    <bpmn:sequenceFlow id="Flow_ApplyArrived_Deliver" sourceRef="applyCourierArrivedTask" targetRef="deliverOrderTask"/>
+    <bpmn:sequenceFlow id="Flow_Deliver_ApplyDeliver" sourceRef="deliverOrderTask" targetRef="applyDeliverOrderTask"/>
+    <bpmn:sequenceFlow id="Flow_ApplyDeliver_DeliveredEnd" sourceRef="applyDeliverOrderTask" targetRef="deliveredEnd"/>
+  </bpmn:process>
+
+  <bpmndi:BPMNDiagram id="BPMNDiagram_OrderProcess">
+    <bpmndi:BPMNPlane id="BPMNPlane_OrderProcess" bpmnElement="orderProcess">
+      <bpmndi:BPMNShape id="startCreateOrder_di" bpmnElement="startCreateOrder">
+        <dc:Bounds x="160" y="220" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="publishCreateOrderTask_di" bpmnElement="publishCreateOrderTask">
+        <dc:Bounds x="240" y="198" width="110" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="waitOrderCreated_di" bpmnElement="waitOrderCreated">
+        <dc:Bounds x="390" y="220" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="reviewOrderTask_di" bpmnElement="reviewOrderTask">
+        <dc:Bounds x="470" y="198" width="110" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="sellerReviewTimeout_di" bpmnElement="sellerReviewTimeout">
+        <dc:Bounds x="507" y="260" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="cancelSellerTimeoutTask_di" bpmnElement="cancelSellerTimeoutTask">
+        <dc:Bounds x="470" y="350" width="130" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="timeoutCancelledEnd_di" bpmnElement="timeoutCancelledEnd">
+        <dc:Bounds x="650" y="372" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="applyReviewTask_di" bpmnElement="applyReviewTask">
+        <dc:Bounds x="630" y="198" width="110" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="reviewDecisionGateway_di" bpmnElement="reviewDecisionGateway" isMarkerVisible="true">
+        <dc:Bounds x="790" y="213" width="50" height="50"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="cancelledEnd_di" bpmnElement="cancelledEnd">
+        <dc:Bounds x="900" y="102" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="assembleOrderTask_di" bpmnElement="assembleOrderTask">
+        <dc:Bounds x="900" y="198" width="110" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="applyAssembleTask_di" bpmnElement="applyAssembleTask">
+        <dc:Bounds x="1050" y="198" width="110" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="searchCourierTask_di" bpmnElement="searchCourierTask">
+        <dc:Bounds x="1200" y="198" width="110" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="applySearchCourierTask_di" bpmnElement="applySearchCourierTask">
+        <dc:Bounds x="1350" y="198" width="110" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="waitCourierAssigned_di" bpmnElement="waitCourierAssigned">
+        <dc:Bounds x="1500" y="220" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="acceptDeliveryTask_di" bpmnElement="acceptDeliveryTask">
+        <dc:Bounds x="1580" y="198" width="110" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="applyAcceptDeliveryTask_di" bpmnElement="applyAcceptDeliveryTask">
+        <dc:Bounds x="1730" y="198" width="110" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="courierArrivedTask_di" bpmnElement="courierArrivedTask">
+        <dc:Bounds x="1880" y="198" width="110" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="courierArrivalTimeout_di" bpmnElement="courierArrivalTimeout">
+        <dc:Bounds x="1917" y="260" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="markDelayedTask_di" bpmnElement="markDelayedTask">
+        <dc:Bounds x="1880" y="350" width="110" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="delayedBranchEnd_di" bpmnElement="delayedBranchEnd">
+        <dc:Bounds x="2030" y="372" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="applyCourierArrivedTask_di" bpmnElement="applyCourierArrivedTask">
+        <dc:Bounds x="2030" y="198" width="110" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="deliverOrderTask_di" bpmnElement="deliverOrderTask">
+        <dc:Bounds x="2180" y="198" width="110" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="applyDeliverOrderTask_di" bpmnElement="applyDeliverOrderTask">
+        <dc:Bounds x="2330" y="198" width="110" height="80"/>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="deliveredEnd_di" bpmnElement="deliveredEnd">
+        <dc:Bounds x="2480" y="220" width="36" height="36"/>
+      </bpmndi:BPMNShape>
+
+      <bpmndi:BPMNEdge id="Flow_Start_PublishCreateOrder_di" bpmnElement="Flow_Start_PublishCreateOrder">
+        <di:waypoint x="196" y="238"/><di:waypoint x="240" y="238"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_PublishCreateOrder_WaitCreated_di" bpmnElement="Flow_PublishCreateOrder_WaitCreated">
+        <di:waypoint x="350" y="238"/><di:waypoint x="390" y="238"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_WaitCreated_Review_di" bpmnElement="Flow_WaitCreated_Review">
+        <di:waypoint x="426" y="238"/><di:waypoint x="470" y="238"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_SellerTimeout_Cancel_di" bpmnElement="Flow_SellerTimeout_Cancel">
+        <di:waypoint x="525" y="296"/><di:waypoint x="525" y="350"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Cancel_TimeoutEnd_di" bpmnElement="Flow_Cancel_TimeoutEnd">
+        <di:waypoint x="600" y="390"/><di:waypoint x="650" y="390"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Review_ApplyReview_di" bpmnElement="Flow_Review_ApplyReview">
+        <di:waypoint x="580" y="238"/><di:waypoint x="630" y="238"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ApplyReview_Gateway_di" bpmnElement="Flow_ApplyReview_Gateway">
+        <di:waypoint x="740" y="238"/><di:waypoint x="790" y="238"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ReviewAccepted_Assemble_di" bpmnElement="Flow_ReviewAccepted_Assemble">
+        <di:waypoint x="840" y="238"/><di:waypoint x="900" y="238"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ReviewRejected_Cancelled_di" bpmnElement="Flow_ReviewRejected_Cancelled">
+        <di:waypoint x="815" y="213"/><di:waypoint x="815" y="120"/><di:waypoint x="900" y="120"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Assemble_ApplyAssemble_di" bpmnElement="Flow_Assemble_ApplyAssemble">
+        <di:waypoint x="1010" y="238"/><di:waypoint x="1050" y="238"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ApplyAssemble_Search_di" bpmnElement="Flow_ApplyAssemble_Search">
+        <di:waypoint x="1160" y="238"/><di:waypoint x="1200" y="238"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Search_ApplySearch_di" bpmnElement="Flow_Search_ApplySearch">
+        <di:waypoint x="1310" y="238"/><di:waypoint x="1350" y="238"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ApplySearch_WaitCourier_di" bpmnElement="Flow_ApplySearch_WaitCourier">
+        <di:waypoint x="1460" y="238"/><di:waypoint x="1500" y="238"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_WaitCourier_Accept_di" bpmnElement="Flow_WaitCourier_Accept">
+        <di:waypoint x="1536" y="238"/><di:waypoint x="1580" y="238"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Accept_ApplyAccept_di" bpmnElement="Flow_Accept_ApplyAccept">
+        <di:waypoint x="1690" y="238"/><di:waypoint x="1730" y="238"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ApplyAccept_Arrived_di" bpmnElement="Flow_ApplyAccept_Arrived">
+        <di:waypoint x="1840" y="238"/><di:waypoint x="1880" y="238"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_CourierTimeout_MarkDelayed_di" bpmnElement="Flow_CourierTimeout_MarkDelayed">
+        <di:waypoint x="1935" y="296"/><di:waypoint x="1935" y="350"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_MarkDelayed_EndBranch_di" bpmnElement="Flow_MarkDelayed_EndBranch">
+        <di:waypoint x="1990" y="390"/><di:waypoint x="2030" y="390"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Arrived_ApplyArrived_di" bpmnElement="Flow_Arrived_ApplyArrived">
+        <di:waypoint x="1990" y="238"/><di:waypoint x="2030" y="238"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ApplyArrived_Deliver_di" bpmnElement="Flow_ApplyArrived_Deliver">
+        <di:waypoint x="2140" y="238"/><di:waypoint x="2180" y="238"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_Deliver_ApplyDeliver_di" bpmnElement="Flow_Deliver_ApplyDeliver">
+        <di:waypoint x="2290" y="238"/><di:waypoint x="2330" y="238"/>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="Flow_ApplyDeliver_DeliveredEnd_di" bpmnElement="Flow_ApplyDeliver_DeliveredEnd">
+        <di:waypoint x="2440" y="238"/><di:waypoint x="2480" y="238"/>
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

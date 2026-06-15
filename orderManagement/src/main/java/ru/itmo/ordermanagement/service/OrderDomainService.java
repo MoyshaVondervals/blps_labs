@@ -1,0 +1,349 @@
+package ru.itmo.ordermanagement.service;
+
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
+import ru.itmo.ordermanagement.dto.*;
+import ru.itmo.ordermanagement.exception.InvalidOrderStateException;
+import ru.itmo.ordermanagement.exception.ResourceNotFoundException;
+import ru.itmo.ordermanagement.integration.dolibarr.DolibarrConnection;
+import ru.itmo.ordermanagement.model.entity.Courier;
+import ru.itmo.ordermanagement.model.entity.Order;
+import ru.itmo.ordermanagement.model.enums.OrderStatus;
+import ru.itmo.ordermanagement.repository.CourierRepository;
+import ru.itmo.ordermanagement.repository.OrderRepository;
+import ru.itmo.ordermanagement.service.kafka.CreateOrderPublisher;
+import ru.itmo.ordermanagement.service.outbox.OutboxEventService;
+
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.stream.Collectors;
+
+@Service
+@RequiredArgsConstructor
+@Slf4j
+public class OrderDomainService {
+
+    private final OrderRepository orderRepository;
+    private final CourierRepository courierRepository;
+    private final NotificationService notificationService;
+    private final OrderBatchTransactionService orderBatchTransactionService;
+    private final DolibarrInvoiceService dolibarrInvoiceService;
+    private final CreateOrderPublisher createOrderPublisher;
+    private final OutboxEventService outboxEventService;
+    private final NotificationServiceAvailabilityClient notificationServiceAvailabilityClient;
+    private final PlatformTransactionManager txManager;
+
+    @Value("${topic.search-courier}")
+    private String searchCourierTopic;
+
+    @Value("${app.outbox.demo-review-rollback:false}")
+    private boolean outboxDemoReviewRollback;
+
+    @Value("${app.outbox.demo-rollback-operation:}")
+    private String outboxDemoRollbackOperation;
+
+    public void publishCreateOrderRequest(CreateOrderRequest request) {
+        if (!notificationServiceAvailabilityClient.isAvailable()) {
+            throw new InvalidOrderStateException("Notification service is unavailable");
+        }
+
+        createOrderPublisher.publish(request);
+        log.info("Create order request published for customer #{}", request.getCustomerId());
+    }
+
+    public OrderResponse reviewOrder(Long orderId, ReviewOrderRequest request) {
+        TransactionTemplate tx = new TransactionTemplate(txManager);
+        tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRED);
+        tx.setTimeout(30);
+        tx.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
+        return tx.execute(status -> {
+            try {
+                Order order = findOrderOrThrow(orderId);
+                assertStatus(order, OrderStatus.IN_PROCESSING);
+
+                if (request.isCanFulfill()) {
+                    if (order.getDolibarrInvoiceId() == null) {
+                        DolibarrConnection.InvoiceResult invoice = dolibarrInvoiceService.createInvoice(order);
+                        order.setDolibarrInvoiceId(invoice.invoiceId());
+                        order.setDolibarrInvoiceRef(invoice.invoiceRef());
+                        order.setInvoiceCreatedAt(LocalDateTime.now());
+                    }
+                    order.setStatus(OrderStatus.COOKING);
+                    order = orderRepository.save(order);
+                    notificationService.notifyCustomerStatusChanged(order);
+                    log.info("Order #{} accepted by seller, invoice #{}, status: COOKING",
+                            orderId, order.getDolibarrInvoiceId());
+                } else {
+                    order.setStatus(OrderStatus.CANCELLED);
+                    order.setCancelledAt(LocalDateTime.now());
+                    order.setCancelReason(request.getCancelReason() != null
+                            ? request.getCancelReason()
+                            : "Продавец не может выполнить заказ");
+                    order = orderRepository.save(order);
+                    notificationService.notifyCustomerStatusChanged(order);
+                    log.info("Order #{} cancelled by seller: {}", orderId, order.getCancelReason());
+                }
+
+                if (outboxDemoReviewRollback) {
+                    throw new InvalidOrderStateException("Outbox review demo rollback");
+                }
+                rollbackIfDemo("reviewOrder");
+
+                return toResponse(order);
+            } catch (Exception e) {
+                status.setRollbackOnly();
+                throw e;
+            }
+        });
+    }
+
+    @Transactional(isolation = Isolation.REPEATABLE_READ)
+    public OrderResponse assembleOrder(Long orderId) {
+        Order order = findOrderOrThrow(orderId);
+        assertStatus(order, OrderStatus.COOKING);
+
+        order.setStatus(OrderStatus.ASSEMBLING);
+        order = orderRepository.save(order);
+
+        notificationService.notifyCustomerStatusChanged(order);
+        rollbackIfDemo("assembleOrder");
+        log.info("Order #{} assembled, status: ASSEMBLING", orderId);
+        return toResponse(order);
+    }
+
+    @Transactional(isolation = Isolation.SERIALIZABLE)
+    public OrderResponse searchCourier(Long orderId) {
+        Order order = findOrderOrThrow(orderId);
+        assertStatus(order, OrderStatus.ASSEMBLING);
+
+        order.setStatus(OrderStatus.SEARCHING_COURIER);
+        order = orderRepository.save(order);
+
+        outboxEventService.saveEvent("Order", order.getId(), "SearchCourierRequested",
+                searchCourierTopic, String.valueOf(orderId), new SearchCourierRequest(orderId));
+        rollbackIfDemo("searchCourier");
+        log.info("Order #{} moved to SEARCHING_COURIER and queued to outbox", orderId);
+
+        return toResponse(order);
+    }
+
+    @Transactional(isolation = Isolation.REPEATABLE_READ)
+    public OrderResponse courierAcceptDelivery(Long orderId, Long courierId) {
+        Order order = findOrderOrThrow(orderId);
+        assertStatus(order, OrderStatus.AWAITING_COURIER);
+
+        if (order.getCourier() == null || !order.getCourier().getId().equals(courierId)) {
+            throw new InvalidOrderStateException(
+                    "Courier #" + courierId + " is not assigned to order #" + orderId);
+        }
+
+        notificationService.notifySellerCourierAccepted(order);
+        notificationService.notifyCustomerStatusChanged(order);
+        rollbackIfDemo("courierAcceptDelivery");
+        log.info("Order #{}: courier #{} accepted delivery request", orderId, courierId);
+        return toResponse(order);
+    }
+
+    public OrderResponse courierArrived(Long orderId, Long courierId) {
+        TransactionTemplate tx = new TransactionTemplate(txManager);
+        tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRED);
+        tx.setTimeout(30);
+        tx.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
+        return tx.execute(status -> {
+            try {
+                Order order = findOrderOrThrow(orderId);
+
+                if (order.getStatus() != OrderStatus.AWAITING_COURIER
+                        && order.getStatus() != OrderStatus.DELAYED) {
+                    throw new InvalidOrderStateException(
+                            "Order #" + orderId + " is not in AWAITING_COURIER or DELAYED status");
+                }
+
+                if (order.getCourier() == null || !order.getCourier().getId().equals(courierId)) {
+                    throw new InvalidOrderStateException(
+                            "Courier #" + courierId + " is not assigned to order #" + orderId);
+                }
+
+                order.setCourierArrivedAt(LocalDateTime.now());
+                order.setStatus(OrderStatus.IN_DELIVERY);
+                order = orderRepository.save(order);
+
+                notificationService.notifyCustomerStatusChanged(order);
+                rollbackIfDemo("courierArrived");
+                log.info("Order #{}: courier arrived, status: IN_DELIVERY", orderId);
+                return toResponse(order);
+            } catch (Exception e) {
+                status.setRollbackOnly();
+                throw e;
+            }
+        });
+    }
+
+    public OrderResponse deliverOrder(Long orderId, Long courierId) {
+        TransactionTemplate tx = new TransactionTemplate(txManager);
+        tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRED);
+        tx.setTimeout(30);
+        tx.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
+        return tx.execute(status -> {
+            try {
+                Order order = findOrderOrThrow(orderId);
+                assertStatus(order, OrderStatus.IN_DELIVERY);
+
+                if (order.getCourier() == null || !order.getCourier().getId().equals(courierId)) {
+                    throw new InvalidOrderStateException(
+                            "Courier #" + courierId + " is not assigned to order #" + orderId);
+                }
+
+                order.setStatus(OrderStatus.DELIVERED);
+                order.setDeliveredAt(LocalDateTime.now());
+                order = orderRepository.save(order);
+
+                Courier courier = order.getCourier();
+                courier.setAvailable(true);
+                courierRepository.save(courier);
+
+                notificationService.notifyCustomerStatusChanged(order);
+                notificationService.notifySellerOrderDelivered(order);
+                rollbackIfDemo("deliverOrder");
+                log.info("Order #{}: delivered by courier #{}, status: DELIVERED", orderId, courierId);
+                return toResponse(order);
+            } catch (Exception e) {
+                status.setRollbackOnly();
+                throw e;
+            }
+        });
+    }
+
+    public OrderResponse getOrder(Long orderId) {
+        return toResponse(findOrderOrThrow(orderId));
+    }
+
+    public Page<OrderResponse> getOrdersByCustomer(Long customerId, Pageable pageable) {
+        return orderRepository.findByCustomerId(customerId, pageable).map(this::toResponse);
+    }
+
+    public Page<OrderResponse> getOrdersBySeller(Long sellerId, Pageable pageable) {
+        return orderRepository.findBySellerId(sellerId, pageable).map(this::toResponse);
+    }
+
+    public Page<OrderResponse> getOrdersByCourier(Long courierId, Pageable pageable) {
+        return orderRepository.findByCourierId(courierId, pageable).map(this::toResponse);
+    }
+
+    public Page<OrderResponse> getOrdersByStatus(OrderStatus status, Pageable pageable) {
+        return orderRepository.findByStatus(status, pageable).map(this::toResponse);
+    }
+
+    public Page<OrderResponse> getAllOrders(Pageable pageable) {
+        return orderRepository.findAll(pageable).map(this::toResponse);
+    }
+
+    public void cancelOverdueOrders(int timeoutMinutes) {
+        LocalDateTime deadline = LocalDateTime.now().minusMinutes(timeoutMinutes);
+        Pageable batch = PageRequest.of(0, 100, Sort.by("id").ascending());
+        while (true) {
+            Page<Order> overdueOrders = orderRepository
+                    .findByStatusAndSellerNotifiedAtBefore(OrderStatus.IN_PROCESSING, deadline, batch);
+            if (overdueOrders.isEmpty()) {
+                break;
+            }
+
+            List<Long> overdueOrderIds = overdueOrders.stream()
+                    .map(Order::getId)
+                    .toList();
+            orderBatchTransactionService.cancelOverdueBatch(overdueOrderIds, timeoutMinutes);
+        }
+    }
+
+    public void markDelayedOrders(int timeoutMinutes) {
+        LocalDateTime deadline = LocalDateTime.now().minusMinutes(timeoutMinutes);
+        Pageable batch = PageRequest.of(0, 100, Sort.by("id").ascending());
+        while (true) {
+            Page<Order> delayedOrders = orderRepository
+                    .findByStatusAndCourierAssignedAtBefore(OrderStatus.AWAITING_COURIER, deadline, batch);
+            if (delayedOrders.isEmpty()) {
+                break;
+            }
+
+            List<Long> delayedOrderIds = delayedOrders.stream()
+                    .map(Order::getId)
+                    .toList();
+            orderBatchTransactionService.markDelayedBatch(delayedOrderIds, timeoutMinutes);
+        }
+    }
+
+    public void cancelOrderBySellerTimeout(Long orderId, int timeoutMinutes) {
+        orderBatchTransactionService.cancelOverdueBatch(List.of(orderId), timeoutMinutes);
+    }
+
+    public void markOrderDelayedByCourierTimeout(Long orderId, int timeoutMinutes) {
+        orderBatchTransactionService.markDelayedBatch(List.of(orderId), timeoutMinutes);
+    }
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public void attachProcessInstance(Long orderId, String processInstanceId) {
+        Order order = findOrderOrThrow(orderId);
+        order.setProcessInstanceId(processInstanceId);
+        orderRepository.save(order);
+    }
+
+    private Order findOrderOrThrow(Long orderId) {
+        return orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderId));
+    }
+
+    private void assertStatus(Order order, OrderStatus expected) {
+        if (order.getStatus() != expected) {
+            throw new InvalidOrderStateException(
+                    String.format("Order #%d has status %s, expected %s",
+                            order.getId(), order.getStatus(), expected));
+        }
+    }
+
+    private void rollbackIfDemo(String operation) {
+        if (operation.equals(outboxDemoRollbackOperation)) {
+            throw new InvalidOrderStateException("Outbox demo rollback: " + operation);
+        }
+    }
+
+    public OrderResponse toResponse(Order order) {
+        return OrderResponse.builder()
+                .id(order.getId())
+                .customerId(order.getCustomer().getId())
+                .customerName(order.getCustomer().getName())
+                .sellerId(order.getSeller().getId())
+                .sellerName(order.getSeller().getName())
+                .courierId(order.getCourier() != null ? order.getCourier().getId() : null)
+                .courierName(order.getCourier() != null ? order.getCourier().getName() : null)
+                .status(order.getStatus())
+                .totalPrice(order.getTotalPrice())
+                .dolibarrInvoiceId(order.getDolibarrInvoiceId())
+                .dolibarrInvoiceRef(order.getDolibarrInvoiceRef())
+                .items(order.getItems().stream()
+                        .map(i -> OrderItemResponse.builder()
+                                .id(i.getId())
+                                .productId(i.getProduct() != null ? i.getProduct().getId() : null)
+                                .productName(i.getProductName())
+                                .quantity(i.getQuantity())
+                                .price(i.getPrice())
+                                .build())
+                        .collect(Collectors.toList()))
+                .createdAt(order.getCreatedAt())
+                .updatedAt(order.getUpdatedAt())
+                .invoiceCreatedAt(order.getInvoiceCreatedAt())
+                .deliveredAt(order.getDeliveredAt())
+                .cancelReason(order.getCancelReason())
+                .build();
+    }
+}

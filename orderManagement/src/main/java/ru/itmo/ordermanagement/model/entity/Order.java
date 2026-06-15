@@ -75,6 +75,9 @@ public class Order {
     @Column(name = "cancel_reason", length = 500)
     private String cancelReason;
 
+    @Column(name = "process_instance_id", length = 64)
+    private String processInstanceId;
+
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<OrderItem> items = new ArrayList<>();

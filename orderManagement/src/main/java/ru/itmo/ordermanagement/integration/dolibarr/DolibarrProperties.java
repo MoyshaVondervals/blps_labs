@@ -11,6 +11,8 @@ import java.time.Duration;
 public class DolibarrProperties {
     private String baseUrl;
     private String apiKey;
+    private String login;
+    private String password;
     private BigDecimal defaultVatRate = BigDecimal.ZERO;
     private Duration connectTimeout = Duration.ofSeconds(5);
     private Duration readTimeout = Duration.ofSeconds(20);

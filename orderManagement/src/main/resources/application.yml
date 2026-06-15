@@ -16,22 +16,15 @@ spring:
     username: ${SPRING_DATASOURCE_USERNAME:postgres}
     password: ${SPRING_DATASOURCE_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
-
-  app:
-    xa:
-      unique-resource-name: orderDb
-      server-name: ${DB_HOST:localhost}
-      port-number: ${DB_PORT:5432}
-      database-name: ${DB_NAME:order_management}
-      user: ${DB_USER:postgres}
-      password: ${DB_PASSWORD:postgres}
-      min-pool-size: 2
-      max-pool-size: 10
-      borrow-connection-timeout: 30
-
-
+    hikari:
+      minimum-idle: ${ORDER_DB_POOL_MIN:5}
+      maximum-pool-size: ${ORDER_DB_POOL_MAX:40}
+      connection-timeout: ${ORDER_DB_POOL_BORROW_TIMEOUT_MS:60000}
+      idle-timeout: 60000
+      max-lifetime: 300000
 
   jpa:
+    open-in-view: false
     hibernate:
       ddl-auto: update
     show-sql: true
@@ -47,6 +40,29 @@ spring:
 
   kafka:
     bootstrap-servers: localhost:29092
+    listener:
+      ack-mode: manual
+    consumer:
+      group-id: order-management-bpm
+      auto-offset-reset: earliest
+      key-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring:
+          deserializer:
+            key:
+              delegate:
+                class: org.apache.kafka.common.serialization.StringDeserializer
+            value:
+              delegate:
+                class: org.springframework.kafka.support.serializer.JsonDeserializer
+          json:
+            trusted:
+              packages: ru.itmo.ordermanagement.dto
+            use:
+              type:
+                headers: false
+      enable-auto-commit: false
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
@@ -63,6 +79,28 @@ springdoc:
   swagger-ui:
     path: /swagger-ui.html
 
+camunda:
+  bpm:
+    authorization:
+      enabled: true
+    database:
+      schema-update: true
+    job-execution:
+      enabled: true
+      core-pool-size: 1
+      max-pool-size: 2
+      queue-capacity: 2
+      max-jobs-per-acquisition: 2
+    admin-user:
+      id: moysha
+      password: 2281337
+      first-name: Admin
+      last-name: User
+    filter:
+      create: All tasks
+    deployment-resource-pattern:
+      - classpath*:/processes/*.bpmn
+
 app:
   outbox:
     demo-review-rollback: ${OUTBOX_DEMO_REVIEW_ROLLBACK:false}
@@ -74,6 +112,8 @@ app:
   dolibarr:
     base-url: ${DOLIBARR_BASE_URL:http://localhost:8084}
     api-key: ${DOLIBARR_API_KEY:}
+    login: ${DOLIBARR_LOGIN:admin}
+    password: ${DOLIBARR_PASSWORD:admin}
     default-vat-rate: ${DOLIBARR_DEFAULT_VAT_RATE:0}
     connect-timeout: ${DOLIBARR_CONNECT_TIMEOUT:5s}
     read-timeout: ${DOLIBARR_READ_TIMEOUT:20s}
@@ -82,3 +122,5 @@ topic:
   send-notification: send-notification
   create-order: create-order
   search-courier: search-courier
+  order-created: order-created
+  courier-assigned: courier-assigned

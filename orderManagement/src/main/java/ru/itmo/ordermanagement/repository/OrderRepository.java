@@ -37,4 +37,6 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     Page<Order> findByStatusAndSellerNotifiedAtBefore(OrderStatus status, LocalDateTime deadline, Pageable pageable);
 
     Page<Order> findByStatusAndCourierAssignedAtBefore(OrderStatus status, LocalDateTime deadline, Pageable pageable);
+
+    Optional<Order> findByProcessInstanceId(String processInstanceId);
 }

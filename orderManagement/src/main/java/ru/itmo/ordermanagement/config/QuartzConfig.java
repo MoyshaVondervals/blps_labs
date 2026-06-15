@@ -5,12 +5,14 @@ import org.quartz.SimpleScheduleBuilder;
 import org.quartz.Trigger;
 import org.quartz.TriggerBuilder;
 import org.quartz.JobBuilder;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import ru.itmo.ordermanagement.job.CheckCourierTimeoutJob;
 import ru.itmo.ordermanagement.job.CheckSellerTimeoutJob;
 
 @Configuration
+@ConditionalOnProperty(name = "app.legacy-quartz-timeouts-enabled", havingValue = "true")
 public class QuartzConfig {
 
     @Bean

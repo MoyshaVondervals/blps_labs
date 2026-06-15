@@ -20,7 +20,9 @@ import java.util.Map;
 
 public class DolibarrConnectionImpl implements DolibarrConnection {
     private final String baseUrl;
-    private final String apiKey;
+    private String apiKey;
+    private final String login;
+    private final String password;
     private final BigDecimal defaultVatRate;
     private final Duration readTimeout;
     private final boolean validateOnCreate;
@@ -30,12 +32,16 @@ public class DolibarrConnectionImpl implements DolibarrConnection {
 
     public DolibarrConnectionImpl(String baseUrl,
                                   String apiKey,
+                                  String login,
+                                  String password,
                                   BigDecimal defaultVatRate,
                                   Duration connectTimeout,
                                   Duration readTimeout,
                                   boolean validateOnCreate) {
         this.baseUrl = baseUrl;
         this.apiKey = apiKey;
+        this.login = login;
+        this.password = password;
         this.defaultVatRate = defaultVatRate;
         this.readTimeout = readTimeout;
         this.validateOnCreate = validateOnCreate;
@@ -173,7 +179,7 @@ public class DolibarrConnectionImpl implements DolibarrConnection {
         HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(URI.create(apiUrl(path)))
                 .timeout(readTimeout)
-                .header("DOLAPIKEY", apiKey)
+                .header("DOLAPIKEY", resolveApiKey())
                 .header("Accept", "application/json");
 
         if (jsonBody == null) {
@@ -183,6 +189,36 @@ public class DolibarrConnectionImpl implements DolibarrConnection {
             builder.method(method, HttpRequest.BodyPublishers.ofString(jsonBody));
         }
         return httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    private String resolveApiKey() throws IOException, InterruptedException {
+        if (apiKey != null && !apiKey.isBlank()) {
+            return apiKey;
+        }
+        if (login == null || login.isBlank() || password == null || password.isBlank()) {
+            throw new DolibarrInvoiceException("Dolibarr apiKey or login/password is not configured");
+        }
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("login", login);
+        body.put("password", password);
+
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(apiUrl("/login")))
+                .timeout(readTimeout)
+                .header("Accept", "application/json")
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body)))
+                .build();
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        ensureSuccess(response, "login");
+
+        JsonNode token = objectMapper.readTree(response.body()).path("success").path("token");
+        if (token.isMissingNode() || token.isNull() || token.asText().isBlank()) {
+            throw new DolibarrInvoiceException("Dolibarr login response did not contain token");
+        }
+        apiKey = token.asText();
+        return apiKey;
     }
 
     private String apiUrl(String path) {

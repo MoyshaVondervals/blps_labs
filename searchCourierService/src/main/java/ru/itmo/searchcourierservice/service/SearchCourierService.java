@@ -2,6 +2,7 @@ package ru.itmo.searchcourierservice.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import ru.itmo.searchcourierservice.dto.CourierAssignedEvent;
 import ru.itmo.searchcourierservice.dto.NotificationEvent;
 import ru.itmo.searchcourierservice.dto.SearchCourierRequest;
 import ru.itmo.searchcourierservice.exception.ResourceNotFoundException;
@@ -11,6 +12,7 @@ import ru.itmo.searchcourierservice.model.enums.OrderStatus;
 import ru.itmo.searchcourierservice.model.enums.RecipientType;
 import ru.itmo.searchcourierservice.repository.CourierRepository;
 import ru.itmo.searchcourierservice.repository.OrderRepository;
+import ru.itmo.searchcourierservice.service.kafka.CourierAssignedEventPublisher;
 import ru.itmo.searchcourierservice.service.outbox.OutboxEventService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -27,6 +29,7 @@ public class SearchCourierService {
     private final OrderRepository orderRepository;
     private final CourierRepository courierRepository;
     private final OutboxEventService outboxEventService;
+    private final CourierAssignedEventPublisher courierAssignedEventPublisher;
 
     @Value("${topic.send-notification}")
     private String sendNotificationTopic;
@@ -43,9 +46,13 @@ public class SearchCourierService {
             return;
         }
 
-        Courier courier = courierRepository.findFirstByAvailableTrue().orElse(null);
+        // Максимально простое назначение: первый свободный курьер, а если
+        // свободных нет — просто первый курьер по id (чтобы заказ не зависал).
+        Courier courier = courierRepository.findFirstByAvailableTrue()
+                .or(courierRepository::findFirstByOrderByIdAsc)
+                .orElse(null);
         if (courier == null) {
-            log.info("No available couriers for order #{}", order.getId());
+            log.warn("No couriers exist at all for order #{}", order.getId());
             return;
         }
 
@@ -63,6 +70,7 @@ public class SearchCourierService {
         orderRepository.save(order);
 
         notifyCourierNewDelivery(order);
+        courierAssignedEventPublisher.publish(new CourierAssignedEvent(order.getId(), courier.getId()));
         log.info("Order #{}: courier #{} assigned, status: AWAITING_COURIER",
                 order.getId(), courier.getId());
     }

@@ -99,3 +99,4 @@ app:
 topic:
   create-order: create-order
   send-notification: send-notification
+  order-created: order-created
